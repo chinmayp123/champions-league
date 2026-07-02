@@ -379,7 +379,7 @@ export async function matchConditions(ev, homeRef, awayRef) {
 // model score prediction: run-of-play once live, market-implied pre-match.
 // realXG (FotMob, optional) replaces the shot proxy with true cumulative xG when present.
 // cond (optional) applies a small fatigue/altitude/heat tilt to expected goals.
-export function scorePrediction(ev, sum, liveOdds, realXG = null, priors = null, cond = null) {
+export function scorePrediction(ev, sum, liveOdds, realXG = null, priors = null, cond = null, goalsBias = 1) {
   const comp = ev.competitions[0];
   const home = comp.competitors.find((t) => t.homeAway === "home");
   const away = comp.competitors.find((t) => t.homeAway === "away");
@@ -422,6 +422,13 @@ export function scorePrediction(ev, sum, liveOdds, realXG = null, priors = null,
       remLamH = 0.55 * remLamH + 0.45 * priors.home;
       remLamA = 0.55 * remLamA + 0.45 * priors.away;
       basis = "market + R1 form";
+    }
+    // goal-expectation calibration (pregame only): scale the line toward the realized scoring
+    // environment so the model stops over-firing Unders / Draws / BTTS-No. 1.0 = no change. The
+    // factor is learned from settled Total legs in betlog.goalsBias() and threaded in by the caller.
+    if (state === "pre" && goalsBias && goalsBias !== 1) {
+      remLamH *= goalsBias; remLamA *= goalsBias;
+      basis += ` · cal ×${goalsBias.toFixed(2)}`;
     }
   }
 
@@ -653,7 +660,7 @@ export async function pregameProjections(home, away) {
 }
 
 // one match → a complete plain-data view (scores, stats, odds, prediction, recs, keepers, events)
-export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting = null, priors = null, conditions = null) {
+export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting = null, priors = null, conditions = null, goalsBias = 1) {
   const comp = ev.competitions[0];
   const home = comp.competitors.find((t) => t.homeAway === "home");
   const away = comp.competitors.find((t) => t.homeAway === "away");
@@ -672,6 +679,8 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
     logo: t.team.logo || (t.team.logos && t.team.logos[0]?.href) || null,
     color: t.team.color ? `#${t.team.color}` : null,
     altColor: t.team.alternateColor ? `#${t.team.alternateColor}` : null,
+    // penalty-shootout score — ESPN puts it on the competitor when a knockout game goes to pens
+    shoot: t.shootoutScore != null ? Number(t.shootoutScore) : null,
   });
 
   // stats
@@ -742,7 +751,7 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
   }
 
   // prediction + recommended bets — run-of-play model once live, market-based pre-match
-  const prediction = scorePrediction(ev, sum, liveOdds, realXG, priors?.xgPrior, conditions?.tilt);
+  const prediction = scorePrediction(ev, sum, liveOdds, realXG, priors?.xgPrior, conditions?.tilt, goalsBias);
   const model = bettingModel(ev, sum, liveOdds, realXG, prediction);
   let recs = model ? model.recs : [];
   let recsBasis = model ? "run of play" : null;
@@ -805,6 +814,21 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
     group = { header: g.header || "Group", entries };
   }
 
+  // penalty-shootout kicks (best-effort): ESPN's live shootout event naming isn't documented,
+  // so match any keyEvent that mentions a shootout and infer scored/missed from the text. If a
+  // shootout uses a shape we don't recognise, this stays empty and the UI just shows the totals.
+  const shootoutKicks = [];
+  for (const e of sum.keyEvents || []) {
+    const t = `${e.type?.text || ""} ${e.text || ""}`.toLowerCase();
+    if (!t.includes("shootout")) continue;
+    const scored = !/(miss|saved|save\b|post|crossbar|off target|wide|over the bar)/.test(t);
+    shootoutKicks.push({
+      teamAbbr: e.team?.id === home.team.id ? home.team.abbreviation : e.team?.id === away.team.id ? away.team.abbreviation : "",
+      scored,
+      player: (e.participants || [])[0]?.athlete?.displayName || "",
+    });
+  }
+
   // events (goals, cards, subs)
   const events = (sum.keyEvents || [])
     .filter((e) => {
@@ -833,8 +857,26 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
   const topPlayers = realXG?.topPlayers || null;
   const form = realXG?.form || null;
 
+  // knockout round tag (season.slug is "group-stage" during groups, round slug afterwards)
+  const slug = ev.season?.slug || "";
+  const round = slug && slug !== "group-stage"
+    ? { slug, label: KO_LABEL[slug] || slug.replace(/-/g, " "), knockout: true }
+    : null;
+
+  // advance probability (knockout, unfinished only): a 90-minute draw doesn't eliminate anyone —
+  // it goes to extra time/pens — so fold wD into each side. The draw is split by relative
+  // strength, but shrunk hard toward a coin flip (x0.4) because ET/pens are far closer to
+  // 50/50 than regulation: legs tire, pens are near-random, favourites lose most of their edge.
+  let advance = null;
+  if (round && prediction && state !== "post") {
+    const strength = prediction.wH + prediction.wA > 0 ? prediction.wH / (prediction.wH + prediction.wA) : 0.5;
+    const etH = 0.5 + (strength - 0.5) * 0.4;
+    advance = { home: prediction.wH + prediction.wD * etH, away: prediction.wA + prediction.wD * (1 - etH) };
+  }
+
   return {
     id: ev.id, state, halftime, minute, statusText, venue: comp.venue?.fullName || "",
+    date: ev.date, round, advance, shootoutKicks: shootoutKicks.length ? shootoutKicks : null,
     home: teamObj(home), away: teamObj(away),
     possession, stats, xg, momentum, topPlayers, form, odds, prediction, recs, recsBasis, dominance, valueEdges,
     publicBetting: publicBetting || null, pregameProj: priors || null, conditions: conditions || null, keepers, corners, group, events,
@@ -950,6 +992,19 @@ export async function getDailyParlays(stake = 10) {
   return data;
 }
 
+// the parlay-builder menu for the widget: upcoming games + their full priced candidate legs, so
+// the user can assemble any parlay and see the model's grade. Same per-game cost as the daily
+// card, so reuse the same TTL. parlays.mjs imports from this module — lazy import avoids a cycle.
+let parlayMenuCache = { at: 0, data: null };
+export async function getParlayMenu() {
+  const now = Date.now();
+  if (parlayMenuCache.data && now - parlayMenuCache.at < PARLAY_TTL) return parlayMenuCache.data;
+  const { parlayMenu } = await import("./parlays.mjs");
+  const data = await parlayMenu();
+  parlayMenuCache = { at: now, data };
+  return data;
+}
+
 // shape FanDuel's single-book props into the same structure the Odds-API path returns, so the
 // renderer draws them unchanged. No other book, so best = null (nothing "beats FanDuel").
 function mapFanduelProps(fd) {
@@ -1027,7 +1082,7 @@ export async function getRecord() {
     await bl.settle().catch(() => {});
     const log = bl.readLog();
     const projAccuracy = await getProjectionAccuracy().catch(() => null);
-    const data = { stats: bl.stats(), recent: bl.statsRecent(7), projAccuracy, days: (log.days || []).slice().reverse() }; // newest first
+    const data = { stats: bl.stats(), recent: bl.statsRecent(7), projAccuracy, goalsBias: bl.goalsBias(), days: (log.days || []).slice().reverse() }; // newest first
     recordCache = { at: now, data };
     return data;
   } catch (e) {
@@ -1035,13 +1090,43 @@ export async function getRecord() {
   }
 }
 
-// knockout rounds in bracket order (ESPN season.slug)
-const KO_ORDER = ["round-of-32", "round-of-16", "quarterfinals", "semifinals", "third-place", "final"];
-const KO_LABEL = { "round-of-32": "Round of 32", "round-of-16": "Round of 16", quarterfinals: "Quarter-finals", semifinals: "Semi-finals", "third-place": "Third place", final: "Final" };
+// persist a user-built parlay from the widget's Parlay Builder, then invalidate the record cache so
+// the next getRecord() re-reads the log (and settles it as games finish). betlog imports from this
+// module, so import it lazily to avoid a load-time cycle.
+export async function trackParlay(payload) {
+  const bl = await import("./betlog.mjs");
+  const res = bl.trackParlay(payload);
+  if (res?.ok) recordCache = { at: 0, data: null };
+  return res;
+}
 
-// scan a window of fixtures for knockout games (season.slug != group-stage), grouped by round
+// snapshot closing FanDuel prices for pending legs near kickoff (CLV read). Called from the
+// widget's poll loop; betlog throttles itself internally. Lazy import — betlog imports from
+// this module, so a static import would create a load-time cycle.
+export async function captureClosing() {
+  try {
+    const bl = await import("./betlog.mjs");
+    return await bl.captureClosing();
+  } catch (e) {
+    return { error: String(e?.message || e) };
+  }
+}
+
+// knockout rounds in bracket order (ESPN season.slug)
+// ESPN's live slug for the bronze game is "3rd-place-match" — keep "third-place" too in case it varies
+const KO_ORDER = ["round-of-32", "round-of-16", "quarterfinals", "semifinals", "third-place", "3rd-place-match", "final"];
+const KO_LABEL = { "round-of-32": "Round of 32", "round-of-16": "Round of 16", quarterfinals: "Quarter-finals", semifinals: "Semi-finals", "third-place": "Third place", "3rd-place-match": "Third place", final: "Final" };
+
+// scan fixtures for knockout games (season.slug != group-stage), grouped by round. The whole
+// knockout window is fixed (Jun 28 – Jul 19, 2026), so scan all of it — a rolling window
+// anchored on today drops the early rounds off the bracket as the tournament progresses.
 async function scanKnockout() {
-  const boards = await Promise.all(Array.from({ length: 16 }, (_, i) => scoreboardOn(ymd(i - 2)).catch(() => ({ events: [] }))));
+  const dates = [];
+  for (let t = Date.UTC(2026, 5, 27); t <= Date.UTC(2026, 6, 20); t += 864e5) {
+    const d = new Date(t);
+    dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`);
+  }
+  const boards = await Promise.all(dates.map((ds) => scoreboardOn(ds).catch(() => ({ events: [] }))));
   const seen = new Set(), byRound = new Map();
   for (const b of boards) for (const ev of b.events || []) {
     const slug = ev.season?.slug || "";
@@ -1054,7 +1139,14 @@ async function scanKnockout() {
       id: ev.id, date: ev.date,
       homeAbbr: home.team.abbreviation, awayAbbr: away.team.abbreviation, homeLogo: home.team.logo, awayLogo: away.team.logo,
       homeScore: Number(home.score) || 0, awayScore: Number(away.score) || 0,
+      // shootout scores + explicit winner flags. With pens the 90' scores stay level, so the
+      // bracket can't infer the winner from score — ESPN sets competitor.winner on finished games.
+      homeShoot: home.shootoutScore != null ? Number(home.shootoutScore) : null,
+      awayShoot: away.shootoutScore != null ? Number(away.shootoutScore) : null,
+      homeWin: home.winner === true, awayWin: away.winner === true,
       state: st, statusText: st === "in" ? (c.status.displayClock || "LIVE") : st === "post" ? "FT" : null,
+      // "model favors X%" chip on unplayed ties — ESPN's inline line, zero extra fetch cost
+      pred: st === "pre" ? espnMarketPrediction(ev) : null,
     });
   }
   return [...byRound.entries()]
@@ -1155,7 +1247,10 @@ export async function getWidgetState(query) {
       const saved = loadPregame(ev.id);
       if (saved) pregame = { ...saved, basis: `${saved.basis || "pre"} · saved pre-kickoff` };
     }
-    const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions);
+    // goal-expectation calibration factor (learned from settled Total legs). Lazy import — betlog
+    // imports from this module, so a static import would create a load-time cycle.
+    const gb = await import("./betlog.mjs").then((b) => b.goalsBias().factor).catch(() => 1);
+    const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions, gb);
     // pre-match per-player projections (model est., display-only) from recent form — feeds both
     // the projected shots-on-target and predicted-scorer sections in the widget
     if (isPre) {
