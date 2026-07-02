@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { summary, statMap, ml2prob, poissonCdf } from "./lib.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelBTTS } from "./fanduel.mjs";
+import { oddspapiBTTS } from "./oddspapi.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(HERE, "bets");
@@ -343,9 +344,12 @@ export async function captureClosing() {
     }
     if (!meta || now < meta.date - CLV_BEFORE || now > meta.date + CLV_AFTER) continue;
     const wantBTTS = legs.some((l) => l.market === "BTTS");
+    // BTTS close from the SAME chain the bet was priced on (OddsPapi primary, FanDuel fallback) —
+    // the FanDuel public path alone stopped matching WC games, which silently skipped BTTS closes.
+    // OddsPapi's 30-min odds cache is shared with the parlay generator, so this costs ~no quota.
     const [pb, btts] = await Promise.all([
       actionPublicBetting(meta.homeRef, meta.awayRef),
-      wantBTTS ? fanduelBTTS(meta.homeRef, meta.awayRef) : null,
+      wantBTTS ? oddspapiBTTS(meta.homeRef, meta.awayRef).then((r) => r || fanduelBTTS(meta.homeRef, meta.awayRef)).catch(() => null) : null,
     ]);
     const fd = pb?.fanduel;
     for (const l of legs) {
