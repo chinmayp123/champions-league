@@ -5,7 +5,9 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { summary, statMap, ml2prob } from "./lib.mjs";
+import { summary, statMap, ml2prob, poissonCdf } from "./lib.mjs";
+import { actionPublicBetting } from "./actionnetwork.mjs";
+import { fanduelBTTS } from "./fanduel.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(HERE, "bets");
@@ -26,11 +28,49 @@ export function recordDay(out) {
   const data = read();
   const parlays = [];
   for (const g of out.singles || []) if (g.bet) parlays.push({ type: "single", game: g.game, ...g.bet, settled: false, result: null });
+  // recordDay only owns the auto SINGLES — keep any user-tracked builder parlays already logged for
+  // this date so re-running the morning routine doesn't wipe a parlay the user built in the widget.
+  const prior = (data.days || []).find((d) => d.date === out.date);
+  const keptBuilders = (prior?.parlays || []).filter((p) => p.type === "builder");
   data.days = (data.days || []).filter((d) => d.date !== out.date);
-  data.days.push({ date: out.date, stake: out.stake, parlays });
+  data.days.push({ date: out.date, stake: out.stake, parlays: [...parlays, ...keptBuilders] });
   data.days.sort((a, b) => a.date.localeCompare(b.date));
   write(data);
   return data;
+}
+
+// persist a user-built parlay from the widget's Parlay Builder so it settles + shows in the Record
+// view exactly like the daily card. Appended to its slate `date` (preserving the auto singles and
+// any other tracked parlays); re-tracking an identical leg set on the same date replaces it rather
+// than duplicating. Legs carry the event `id` so settle() can grade them from the final summary.
+const amToDecimal = (ml) => (ml == null ? null : ml > 0 ? ml / 100 + 1 : 100 / -ml + 1);
+const decToAmerican = (d) => (d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 / (d - 1)));
+export function trackParlay({ legs, stake = 10, date } = {}) {
+  if (!Array.isArray(legs) || !legs.length || !date) return { error: "need legs + date" };
+  const plLegs = legs.map((l) => ({
+    id: l.id, game: l.game, market: l.market, pick: l.pick,
+    modelProb: l.modelProb, ml: l.ml, edge: l.edge ?? null, rawEdge: l.rawEdge ?? null, why: l.why || null,
+  }));
+  const dec = legs.reduce((p, l) => p * (l.dec || amToDecimal(l.ml) || 1), 1);
+  const modelProb = plLegs.reduce((p, l) => p * (l.modelProb ?? 1), 1);
+  const payout = stake * dec;
+  const ev = stake * (modelProb * dec - 1);
+  const b = dec - 1;
+  const kelly = b > 0 ? Math.min(0.05, Math.max(0, (b * modelProb - (1 - modelProb)) / b / 2)) : 0;
+  const data = read();
+  data.days = data.days || [];
+  let day = data.days.find((d) => d.date === date);
+  if (!day) { day = { date, stake, parlays: [] }; data.days.push(day); data.days.sort((a, b) => a.date.localeCompare(b.date)); }
+  const sig = plLegs.map((l) => `${l.game}|${l.market}|${l.pick}`).sort().join("~");
+  const games = [...new Set(plLegs.map((l) => l.game))];
+  day.parlays = (day.parlays || []).filter((p) => !(p.type === "builder" && p._sig === sig)); // replace an identical re-track
+  day.parlays.push({
+    type: "builder", _sig: sig, game: games.length > 1 ? `${games.length} games` : games[0],
+    legs: plLegs, dec, americanOdds: decToAmerican(dec), modelProb, stake, payout, ev, kelly,
+    settled: false, result: null,
+  });
+  write(data);
+  return { ok: true, date, legs: plLegs.length, dec, americanOdds: decToAmerican(dec), modelProb, payout, ev };
 }
 
 // grade a single leg against a final result { hs, as, hAbbr, aAbbr, corners }.
@@ -54,7 +94,18 @@ function gradeLeg(leg, f) {
     const L = parseFloat(leg.pick.replace(/[^0-9.]/g, ""));
     return /over/i.test(leg.pick) ? f.corners > L : f.corners < L;
   }
-  return null; // Scorer / SOT player props can't be graded from the team score
+  if (leg.market === "Scorer") {
+    // anytime-scorer: did the named player appear among the game's goal scorers? `f.scorers` is the
+    // list of scorer names parsed from the summary's goal events (null = couldn't parse -> ungraded).
+    if (f.scorers == null) return null;
+    const nrm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+    const lastTok = (s) => nrm((s || "").split(/\s+/).filter(Boolean).pop());
+    const name = leg.pick.replace(/anytime/i, "").trim();
+    const a = nrm(name), at = lastTok(name);
+    if (!a) return null;
+    return f.scorers.some((sc) => { const b = nrm(sc); return !!b && (a === b || a.includes(lastTok(sc)) || b.includes(at)); });
+  }
+  return null; // SOT / other player props still can't be graded from the team score
 }
 
 // settle every unsettled parlay whose games are final; grades each leg + the parlay
@@ -78,7 +129,22 @@ export async function settle() {
           const ac = parseInt(statMap(teams.find((t) => t.team.id === a.team.id) || teams[1] || {}).wonCorners || 0, 10) || 0;
           if (hc || ac) corners = hc + ac;
         } catch { /* no corner stats */ }
-        res = { hs: Number(h.score), as: Number(a.score), hAbbr: h.team.abbreviation, aAbbr: a.team.abbreviation, corners };
+        // goal scorers (for anytime-scorer legs): names on goal keyEvents, excluding own goals. If
+        // the game is final but no scorer names parse, distinguish a true 0-0 (empty list -> "no"
+        // grades correctly) from a data gap on a game with goals (null -> leave the leg ungraded).
+        let scorers = null;
+        try {
+          const names = [];
+          for (const e of sum.keyEvents || []) {
+            const t = (e.type?.text || "").toLowerCase();
+            if (!t.includes("goal") || t.includes("own")) continue; // own goals don't credit a scorer
+            const who = (e.participants || [])[0]?.athlete?.displayName;
+            if (who) names.push(who);
+          }
+          const totalGoals = Number(h.score) + Number(a.score);
+          scorers = names.length ? names : totalGoals === 0 ? [] : null;
+        } catch { scorers = null; }
+        res = { hs: Number(h.score), as: Number(a.score), hAbbr: h.team.abbreviation, aAbbr: a.team.abbreviation, corners, scorers };
       }
     } catch { /* not final / fetch failed */ }
     cache.set(id, res);
@@ -87,16 +153,20 @@ export async function settle() {
   for (const day of data.days || []) {
     for (const p of day.parlays) {
       if (p.settled) continue;
-      let allGraded = true, allHit = true;
+      // settle only once EVERY leg is graded hit/miss. A leg that's final-but-ungradeable (player
+      // prop with no scorer data, missing corner stats) keeps the whole parlay PENDING rather than
+      // silently dropping it from the win test — which used to settle such parlays as a false win.
+      let allGraded = true, everyHit = true;
       for (const leg of p.legs) {
         const f = await finalOf(leg.id);
         if (!f) { allGraded = false; continue; }
         const hit = gradeLeg(leg, f);
         leg.result = hit == null ? null : hit ? "hit" : "miss";
         leg.finalScore = `${f.hAbbr} ${f.hs}-${f.as} ${f.aAbbr}`;
-        if (hit === false) allHit = false;
+        if (hit == null) allGraded = false;      // final but can't grade -> stay pending
+        else if (hit === false) everyHit = false;
       }
-      if (allGraded) { p.settled = true; p.result = allHit ? "win" : "loss"; }
+      if (allGraded) { p.settled = true; p.result = everyHit ? "win" : "loss"; }
     }
   }
   write(data);
@@ -145,6 +215,159 @@ function fadeStats(days) {
   };
 }
 
+// --- goal-expectation calibration (the fix for the systematic LOW-SCORING bias) ---
+// The model prices a pregame Over/Under as a Poisson on the match total, so each settled Total
+// leg's modelProb inverts cleanly back to the total-goals lambda the model used for that game.
+// Averaging those lambdas vs the REAL total goals reveals whether the model's goal expectation
+// runs low — it does, which is why it over-fires Unders / BTTS-No / value-Draws and the shadow
+// fade beats it. The ratio (real / model) becomes a multiplier fed back into scorePrediction's
+// pregame lambdas: shrunk toward 1.0 for small samples, capped so one hot/cold run can't run away,
+// and self-correcting (if the model later over-shoots, the ratio drops below 1 and pulls it back).
+const GB_SHRINK = 8;                 // pseudo-games pulling the factor toward 1.0
+const GB_MIN = 0.85, GB_MAX = 1.30;  // hard caps on the multiplier
+// invert a Total leg (pick + modelProb) back to the total-goals lambda the model priced it at.
+// P(Under line) = P(total <= floor(line)) = poissonCdf(floor(line), lambda), monotone-decreasing
+// in lambda, so a bisection recovers it.
+function totalLegLambda(pick, modelProb) {
+  const m = /(Over|Under)\s+([\d.]+)/i.exec(pick || "");
+  if (!m || !(modelProb > 0 && modelProb < 1)) return null;
+  const k = Math.floor(parseFloat(m[2]));
+  const pUnder = /over/i.test(m[1]) ? 1 - modelProb : modelProb;
+  let lo = 0.1, hi = 10;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (poissonCdf(k, mid) > pUnder) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+// the calibration multiplier from RECENT settled Total legs (one per game, deduped). Windowed to
+// the last GB_WINDOW slates rather than all-time: knockout football scores differently from the
+// group stage (cagier, draws protected), so an all-time factor learned on groups would lag the
+// tournament's character — a rolling window keeps the correction current and stays self-correcting.
+const GB_WINDOW = 10;
+export function goalsBias() {
+  const days = (read().days || []).slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, GB_WINDOW);
+  const seen = new Set();
+  let sumModel = 0, sumReal = 0, n = 0;
+  for (const d of days) for (const p of d.parlays || []) for (const l of p.legs || []) {
+    if (l.market !== "Total" || (l.result !== "hit" && l.result !== "miss")) continue;
+    const key = `${d.date}|${l.game}`;
+    if (seen.has(key)) continue;
+    const lam = totalLegLambda(l.pick, l.modelProb);
+    const sc = /(\d+)\s*-\s*(\d+)/.exec(l.finalScore || "");
+    if (lam == null || !sc) continue;
+    seen.add(key);
+    sumModel += lam; sumReal += Number(sc[1]) + Number(sc[2]); n++;
+  }
+  if (!n || sumModel <= 0) return { factor: 1, n: 0, modelMean: null, realMean: null };
+  const ratio = sumReal / sumModel;
+  const shrunk = 1 + (ratio - 1) * (n / (n + GB_SHRINK));
+  const factor = Math.min(GB_MAX, Math.max(GB_MIN, shrunk));
+  return { factor, n, modelMean: sumModel / n, realMean: sumReal / n };
+}
+
+// --- learned edge-trust factor (replaces the hand-picked "trust half the edge" rule) ---
+// How much of the model-vs-market disagreement on DERIVED markets (Total/BTTS/Corners) has been
+// real? Regress outcomes on the claimed edge: hit ≈ implied + β·edge. β̂ = Σe·(hit−impl) / Σe²
+// over settled derived legs. β=1 → edges fully real, β=0 → pure noise, β<0 → anti-signal.
+// Shrunk toward 0.5 for small samples (same pattern as goalsBias), clamped to [0.2, 1.0] so the
+// model always claims SOME edge on legs it selects but can never claim more than the raw number.
+// Self-correcting: if the model's edges start landing, β rises and earns the trust back.
+const TRUST_MARKETS = new Set(["Total", "BTTS", "Corners"]);
+const TRUST_SHRINK = 30;                 // pseudo-legs pulling β toward 0.5
+const TRUST_MIN = 0.2, TRUST_MAX = 1.0;
+export function edgeTrust() {
+  const days = read().days || [];
+  const seen = new Set();
+  let num = 0, den = 0, n = 0;
+  for (const d of days) for (const p of d.parlays || []) for (const l of p.legs || []) {
+    if (!TRUST_MARKETS.has(l.market) || (l.result !== "hit" && l.result !== "miss")) continue;
+    if (l.ml == null || l.edge == null || !l.edge) continue;
+    const k = `${d.date}|${l.game}|${l.market}|${l.pick}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const impl = ml2prob(l.ml);
+    const o = l.result === "hit" ? 1 : 0;
+    num += l.edge * (o - impl);
+    den += l.edge * l.edge;
+    n++;
+  }
+  if (!n || den <= 0) return { trust: 0.5, beta: null, n: 0 };
+  const beta = Math.max(0, Math.min(1.5, num / den));
+  const shrunk = 0.5 + (beta - 0.5) * (n / (n + TRUST_SHRINK));
+  return { trust: Math.min(TRUST_MAX, Math.max(TRUST_MIN, shrunk)), beta, n };
+}
+
+// --- closing line value (CLV) capture ---
+// The fastest read on whether the model has real edge: compare the price we BET at to the price
+// just before kickoff. Consistently beating the close = real edge, even through a losing run;
+// consistently failing to = no hot streak should be trusted. Best-effort: the widget's poll loop
+// calls this (throttled here), and for any pending leg whose game kicks off inside the window we
+// snapshot the current FanDuel price for that market ONCE (closeMl) and never overwrite it.
+// Corners/Scorer legs are skipped (no reliable free close source) — they just carry no CLV.
+const CLV_EVERY_MS = 4 * 60 * 1000;         // at most one capture pass per ~poll window
+const CLV_BEFORE = 45 * 60 * 1000;          // start snapshotting 45 min before kickoff
+const CLV_AFTER = 30 * 60 * 1000;           // keep trying briefly after (late line reads)
+let _clvLastRun = 0;
+const _clvGame = new Map(); // event id -> { date, homeRef, awayRef } | null
+export async function captureClosing() {
+  const now = Date.now();
+  if (now - _clvLastRun < CLV_EVERY_MS) return { skipped: true };
+  _clvLastRun = now;
+  const data = read();
+  const byGame = new Map(); // event id -> pending legs still missing a close
+  for (const day of data.days || []) for (const p of day.parlays || []) {
+    if (p.settled) continue;
+    for (const l of p.legs || []) {
+      if (l.closeMl != null || l.id == null) continue;
+      (byGame.get(l.id) || byGame.set(l.id, []).get(l.id)).push(l);
+    }
+  }
+  if (!byGame.size) return { captured: 0 };
+  let captured = 0;
+  for (const [id, legs] of byGame) {
+    let meta = _clvGame.get(id);
+    if (meta === undefined) {
+      try {
+        const sum = await summary(id);
+        const comp = sum.header?.competitions?.[0];
+        const h = comp?.competitors?.find((c) => c.homeAway === "home");
+        const a = comp?.competitors?.find((c) => c.homeAway === "away");
+        meta = comp && h && a ? {
+          date: new Date(comp.date).getTime(),
+          homeRef: { name: h.team?.displayName, abbr: h.team?.abbreviation },
+          awayRef: { name: a.team?.displayName, abbr: a.team?.abbreviation },
+        } : null;
+      } catch { meta = null; }
+      _clvGame.set(id, meta);
+    }
+    if (!meta || now < meta.date - CLV_BEFORE || now > meta.date + CLV_AFTER) continue;
+    const wantBTTS = legs.some((l) => l.market === "BTTS");
+    const [pb, btts] = await Promise.all([
+      actionPublicBetting(meta.homeRef, meta.awayRef),
+      wantBTTS ? fanduelBTTS(meta.homeRef, meta.awayRef) : null,
+    ]);
+    const fd = pb?.fanduel;
+    for (const l of legs) {
+      let close = null;
+      if (l.market === "Moneyline" && fd) {
+        close = l.pick === "Draw" ? fd.draw?.ml
+          : l.pick === meta.homeRef.abbr ? fd.home?.ml
+          : l.pick === meta.awayRef.abbr ? fd.away?.ml : null;
+      } else if (l.market === "Total" && fd?.total?.line != null) {
+        // only comparable if the line hasn't moved — a different total is a different bet
+        const L = parseFloat((l.pick.match(/[\d.]+/) || [])[0]);
+        if (L === fd.total.line) close = /over/i.test(l.pick) ? fd.total.over : fd.total.under;
+      } else if (l.market === "BTTS" && btts) {
+        close = /yes/i.test(l.pick) ? btts.yes : btts.no;
+      }
+      if (close != null) { l.closeMl = close; l.closeAt = new Date(now).toISOString(); captured++; }
+    }
+  }
+  if (captured) write(data);
+  return { captured };
+}
+
 // calibration + performance over a given list of logged days
 function computeStats(days) {
   const legs = days.flatMap((d) => d.parlays).flatMap((p) => p.legs).filter((l) => l.result === "hit" || l.result === "miss");
@@ -160,7 +383,21 @@ function computeStats(days) {
   const settled = days.flatMap((d) => d.parlays).filter((p) => p.settled);
   let staked = 0, returned = 0, wins = 0;
   for (const p of settled) { staked += p.stake; if (p.result === "win") { returned += p.payout; wins++; } }
+  // CLV: implied prob at close minus at bet — positive = we beat the close (got the longer price
+  // on the same side). Counted for every leg with a captured close, settled or not: CLV is known
+  // at kickoff, which is exactly why it reads edge faster than results do. Deduped like fadeStats.
+  const clvSeen = new Set();
+  let clvSum = 0, clvBeat = 0, clvN = 0;
+  for (const d of days) for (const p of d.parlays || []) for (const l of p.legs || []) {
+    if (l.closeMl == null || l.ml == null) continue;
+    const k = `${d.date}|${l.game}|${l.market}|${l.pick}`;
+    if (clvSeen.has(k)) continue;
+    clvSeen.add(k);
+    const c = ml2prob(l.closeMl) - ml2prob(l.ml);
+    clvSum += c; if (c > 0) clvBeat++; clvN++;
+  }
   return {
+    clv: clvN ? { n: clvN, avgPts: clvSum / clvN, beatRate: clvBeat / clvN } : null,
     legs: legs.length,
     legHitRate: legs.length ? hits / legs.length : null,
     brier: legs.length ? brier / legs.length : null,

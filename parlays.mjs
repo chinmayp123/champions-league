@@ -40,7 +40,7 @@ const MAX_EDGE = 0.05;
 const DRAW_MIN_EDGE = 0.05;
 
 // candidate legs for one event: each { game, market, pick, modelProb, ml, dec, impl, edge }
-async function matchLegs(ev) {
+async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
   const comp = ev.competitions[0];
   const h = comp.competitors.find((t) => t.homeAway === "home");
   const a = comp.competitors.find((t) => t.homeAway === "away");
@@ -53,7 +53,7 @@ async function matchLegs(ev) {
     pregameProjections(homeRef, awayRef),
     matchConditions(ev, homeRef, awayRef),
   ]);
-  const pred = scorePrediction(ev, sum, null, null, priors?.xgPrior, conditions?.tilt);
+  const pred = scorePrediction(ev, sum, null, null, priors?.xgPrior, conditions?.tilt, goalsBias);
   const fd = publicBetting?.fanduel;
   if (!pred || !fd) return null;
 
@@ -85,8 +85,32 @@ async function matchLegs(ev) {
     if (dec == null || rawProb == null) return;
     const impl = 1 / dec;
     const rawEdge = rawProb - impl; // uncapped: this is what selection's band is judged on
-    const edge = Math.sign(rawEdge) * Math.min(Math.abs(rawEdge), MAX_EDGE); // capped, for EV/Kelly only
+    // derived-market probs (Poisson on the model's lambdas) ran ~15pts hot over the first 55
+    // settled legs (hit 41% vs claimed 57% across Total/BTTS/Corners), while market-anchored
+    // ML probs ran honest — so only a LEARNED fraction of the model-vs-market disagreement is
+    // claimed on derived markets (betlog.edgeTrust: outcomes regressed on claimed edges, shrunk
+    // toward 0.5, clamped [0.2, 1]). Selection still bands on rawEdge; this fixes the claimed
+    // prob, EV, Kelly and the calibration data we log going forward, and earns trust back
+    // automatically if the model's edges start landing.
+    const trusted = market === "Moneyline" ? rawEdge : rawEdge * trust;
+    const edge = Math.sign(trusted) * Math.min(Math.abs(trusted), MAX_EDGE); // capped, for EV/Kelly only
     cands.push({ id: ev.id, game, market, pick, group, modelProb: impl + edge, ml, dec, impl, edge, rawEdge, coherent, fadePublic: fade });
+  };
+  // a scorer candidate: priced at FanDuel's REAL anytime ML when the book posts one, else the
+  // model's own FAIR price (dec = 1/scoreProb, edge 0, flagged `fair`). The fair case carries no
+  // edge so it never qualifies for the tracked card (bettable needs a real edge) — it only enriches
+  // the builder menu so the user can add a scorer the book hasn't priced and still see the model %.
+  const pushScorer = (player, scoreProb, fdMl) => {
+    if (!(scoreProb > 0 && scoreProb < 1)) return;
+    const fair = fdMl == null;
+    const dec = fair ? 1 / scoreProb : amToDec(fdMl);
+    if (dec == null || dec <= 1) return;
+    const ml = fair ? decToAm(dec) : fdMl;          // ml is display-only in the fair case
+    const impl = 1 / dec;
+    const rawEdge = scoreProb - impl;               // exactly 0 when fair
+    const edge = Math.sign(rawEdge) * Math.min(Math.abs(rawEdge), MAX_EDGE);
+    cands.push({ id: ev.id, game, market: "Scorer", pick: `${player} anytime`, group: "Scorer",
+      modelProb: fair ? scoreProb : impl + edge, ml, dec, impl, edge, rawEdge, coherent: true, fadePublic: false, fair });
   };
 
   pushLeg("Moneyline", h.team.abbreviation, pred.wH, fd.home?.ml, "Moneyline", h.team.abbreviation === mlFav, fadePublic(h.team.abbreviation));
@@ -102,26 +126,32 @@ async function matchLegs(ev) {
     pushLeg("Total", `Under ${L}`, 1 - pOver, fd.total.under, "Total", totalFav === "Under");
   }
 
-  // anytime-scorer legs: our opponent-adjusted xG model vs FanDuel's REAL anytime price — a
-  // genuine model-vs-market edge, same approach as corners/BTTS. All matched scorers share the
-  // "Scorer" group, so pickMix takes only the single best-edge scorer (no stacking longshots).
+  // anytime-scorer legs: the model's TOP 5 predicted scorers (opponent-adjusted xG -> anytime-goal
+  // probability), priced against FanDuel's REAL anytime price where the book posts one, else at the
+  // model's own fair price. Surfacing the top 5 lets the builder include scorers even when FanDuel
+  // hasn't posted them; the fair-priced ones carry no edge so they never reach the tracked card
+  // (bettable needs a real edge in the band) — only the FanDuel-matched ones can.
   try {
-    const fdProps = await fanduelProps(homeRef, awayRef);
-    if (fdProps?.scorers?.length) {
-      const [hp, ap] = await Promise.all([fotmobPlayerSOT(homeRef, awayRef), fotmobPlayerSOT(awayRef, homeRef)]);
-      const model = [...(hp || []), ...(ap || [])];
+    const [hp, ap] = await Promise.all([fotmobPlayerSOT(homeRef, awayRef), fotmobPlayerSOT(awayRef, homeRef)]);
+    const model = [...(hp || []), ...(ap || [])]
+      .filter((p) => p && p.name && p.scoreProb > 0)
+      .sort((x, y) => y.scoreProb - x.scoreProb)
+      .slice(0, 5);
+    if (model.length) {
+      let fdScorers = [];
+      try { fdScorers = (await fanduelProps(homeRef, awayRef))?.scorers || []; } catch { /* no book price posted */ }
       const nrm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
       const lastTok = (s) => nrm((s || "").split(/\s+/).filter(Boolean).pop());
-      const modelFor = (name) => model.find((p) => {
-        const a = nrm(name), b = nrm(p.name); if (!a || !b) return false;
-        return a === b || a.includes(lastTok(p.name)) || b.includes(lastTok(name));
-      });
-      for (const s of fdProps.scorers) {
-        const mp = modelFor(s.player);
-        if (mp && s.ml != null) pushLeg("Scorer", `${s.player} anytime`, mp.scoreProb, s.ml, "Scorer", true);
-      }
+      const priceFor = (name) => {
+        const hit = fdScorers.find((s) => {
+          const a = nrm(name), b = nrm(s.player); if (!a || !b) return false;
+          return a === b || a.includes(lastTok(s.player)) || b.includes(lastTok(name));
+        });
+        return hit && hit.ml != null ? hit.ml : null;
+      };
+      for (const p of model) pushScorer(p.name, p.scoreProb, priceFor(p.name));
     }
-  } catch { /* no scorer market / no model — parlay falls back to its other legs */ }
+  } catch { /* no model scorers for this game — the builder just won't show scorer legs */ }
 
   // real total-corners line (OddsPapi multi-book, FanDuel public API as fallback) vs our
   // INDEPENDENT corner projection (recent form -> Poisson) — model-vs-market edge
@@ -150,8 +180,11 @@ async function matchLegs(ev) {
 // is a leg worth betting at all? It must (a) AGREE with the model's predicted side (coherent),
 // (b) NOT be a side the sharps are fading, and (c) sit inside the believable edge band — big
 // disagreements (>= EDGE_MAX) are discarded as model error rather than bet as value.
+// Corners are BENCHED from the tracked card (2026-07-01): 36% hit vs 60% claimed over n=11
+// (Under went 1/6, −$37), and the projection rests on 1–2 games of form. They stay in the
+// candidates so the builder menu still prices them; re-evaluate if projAccuracy tightens up.
 function bettable(l) {
-  return l.coherent && !l.fadePublic && l.rawEdge >= EDGE_MIN && l.rawEdge < EDGE_MAX;
+  return l.market !== "Corners" && l.coherent && !l.fadePublic && l.rawEdge >= EDGE_MIN && l.rawEdge < EDGE_MAX;
 }
 
 // the single best bettable leg for a game, ranked by hit probability (steadiest bet — this is
@@ -168,12 +201,15 @@ function longLeg(cands) {
 // plain-English reason a leg was chosen, from its market, pick and (capped) edge vs the price
 function legReason(l) {
   const mp = Math.round(l.modelProb * 100), im = Math.round(l.impl * 100), e = Math.round(l.edge * 100);
+  // a fair-priced scorer has no market to measure against — report the bare anytime-goal estimate
+  if (l.group === "Scorer" && l.fair)
+    return `model's opponent-adjusted xG — ${mp}% to score anytime (no book price posted; shown at fair odds)`;
   const tag =
     l.group === "Moneyline" ? (l.pick === "Draw" ? "value draw — model rates it well above the price" : "backing the model's projected winner")
     : l.group === "Total" ? (/under/i.test(l.pick) ? "model projects a low-scoring game" : "model projects an open, high-scoring game")
     : l.group === "Corners" ? (/under/i.test(l.pick) ? "model projects few corners" : "model projects plenty of corners")
     : l.group === "BTTS" ? (/yes/i.test(l.pick) ? "model expects both teams to score" : "model expects at least one clean sheet")
-    : l.group === "Scorer" ? "model rates this scorer above the price (opponent-adjusted xG)"
+    : l.group === "Scorer" ? "model rates this scorer vs the book's anytime price (opponent-adjusted xG)"
     : "positive-edge spot";
   return `${tag} — model ${mp}% vs market ${im}% (${e >= 0 ? "+" : ""}${e}% edge)`;
 }
@@ -191,7 +227,7 @@ function buildParlay(legs, stake) {
     ? `${legs.length} positive-edge legs, each siding with the model; combined ${Math.round(modelProb * 100)}% to hit.`
     : `single positive-edge leg; ${Math.round(modelProb * 100)}% to hit.`;
   return {
-    legs: legs.map((l) => ({ id: l.id, game: l.game, market: l.market, pick: l.pick, modelProb: l.modelProb, ml: l.ml, edge: l.edge, why: legReason(l) })),
+    legs: legs.map((l) => ({ id: l.id, game: l.game, market: l.market, pick: l.pick, modelProb: l.modelProb, ml: l.ml, edge: l.edge, rawEdge: l.rawEdge, why: legReason(l) })),
     dec, americanOdds: decToAm(dec), modelProb, stake, payout, ev, kelly, rationale,
   };
 }
@@ -230,9 +266,14 @@ export async function generateDailyParlays(stake = 10, events = null) {
     }
   }
   const upcoming = pool.filter((e) => e.competitions[0].status.type.state === "pre");
+  // learned calibrations from the bet log: goal-expectation multiplier (low-scoring bias) +
+  // edge-trust fraction (derived-market overconfidence). Lazy import to avoid a load-time cycle.
+  const cal = await import("./betlog.mjs")
+    .then((b) => ({ goalsBias: b.goalsBias().factor, trust: b.edgeTrust().trust }))
+    .catch(() => ({ goalsBias: 1, trust: 0.5 }));
   const games = [];
   for (const ev of upcoming) {
-    const ml = await matchLegs(ev).catch(() => null);
+    const ml = await matchLegs(ev, cal.goalsBias, cal.trust).catch(() => null);
     if (ml && ml.candidates.length) games.push(ml);
   }
   // PRIMARY (tracked): one straight single per game — the best in-band leg, staked on its own so
@@ -245,6 +286,72 @@ export async function generateDailyParlays(stake = 10, events = null) {
   const longLegs = games.map((g) => longLeg(g.candidates)).filter(Boolean);
   const longshot = longLegs.length >= 2 ? buildParlay(longLegs, stake) : null;
   return { date: events ? bettingDay(events?.[0]?.date || Date.now()) : slate, stake, singles, longshot };
+}
+
+// Parlay BUILDER feed: every upcoming game with its full set of priced candidate legs (all
+// markets, the model's prob vs the real FanDuel price), so the widget can let the user assemble
+// any parlay and see the model's grade. Unlike generateDailyParlays this does NOT filter to
+// in-band/bettable legs — the whole point is to let the user pick any leg, even ones the model
+// dislikes, and see what it thinks. Reuses matchLegs (same goal-expectation calibration) so the
+// numbers line up exactly with the tracked card.
+export async function parlayMenu(events = null) {
+  const slate = bettingDay(Date.now());
+  let pool;
+  if (events) {
+    pool = events;
+  } else {
+    const boards = await Promise.all([
+      scoreboardOn(ymd(0)).catch(() => ({ events: [] })),
+      scoreboardOn(ymd(1)).catch(() => ({ events: [] })),
+    ]);
+    const seen = new Set();
+    pool = [];
+    for (const b of boards) for (const e of b.events || []) {
+      if (seen.has(e.id) || bettingDay(e.date) !== slate) continue;
+      seen.add(e.id);
+      pool.push(e);
+    }
+  }
+  const upcoming = pool.filter((e) => e.competitions[0].status.type.state === "pre");
+  const cal = await import("./betlog.mjs")
+    .then((b) => ({ goalsBias: b.goalsBias().factor, trust: b.edgeTrust().trust }))
+    .catch(() => ({ goalsBias: 1, trust: 0.5 }));
+  const games = [];
+  for (const ev of upcoming) {
+    const ml = await matchLegs(ev, cal.goalsBias, cal.trust).catch(() => null);
+    if (!ml || !ml.candidates.length) continue;
+    games.push({
+      id: ml.id,
+      game: ml.game,
+      date: ml.date,
+      legs: ml.candidates.map((l) => ({
+        id: l.id, game: l.game, market: l.market, pick: l.pick, group: l.group,
+        modelProb: l.modelProb, ml: l.ml, dec: l.dec, impl: l.impl,
+        edge: l.edge, rawEdge: l.rawEdge, coherent: l.coherent, fadePublic: l.fadePublic,
+        fair: l.fair || false, why: legReason(l),
+      })),
+    });
+  }
+  return { date: slate, games };
+}
+
+// grade an arbitrary set of builder-selected legs the same way buildParlay does (independence
+// approximation across legs). Pure function over leg fields the menu already carries.
+export function gradeParlay(legs, stake = 10) {
+  if (!legs || !legs.length) return null;
+  const dec = legs.reduce((p, l) => p * l.dec, 1);
+  const modelProb = legs.reduce((p, l) => p * l.modelProb, 1);
+  const impl = 1 / dec;                 // book's combined implied prob (vig included)
+  const payout = stake * dec;
+  const ev = stake * (modelProb * dec - 1);
+  const edge = modelProb - impl;        // model prob minus the price's implied prob
+  const b = dec - 1;
+  const kelly = b > 0 ? Math.min(0.05, Math.max(0, (b * modelProb - (1 - modelProb)) / b / 2)) : 0;
+  const fairDec = modelProb > 0 ? 1 / modelProb : null;
+  return {
+    dec, americanOdds: decToAm(dec), modelProb, impl, edge, payout, ev, kelly, stake,
+    fairDec, fairAmerican: fairDec ? decToAm(fairDec) : null, legCount: legs.length,
+  };
 }
 
 // a readable (ASCII-safe) text block for the morning routine / log
