@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("wc", {
   onConfig: (cb) => ipcRenderer.on("config", (_e, cfg) => cb(cfg)),
   setMatch: (query) => ipcRenderer.invoke("set-match", query),
   getParlays: () => ipcRenderer.invoke("get-parlays"),
+  getParlayMenu: () => ipcRenderer.invoke("get-parlay-menu"),
+  trackParlay: (payload) => ipcRenderer.invoke("track-parlay", payload),
   getRecord: () => ipcRenderer.invoke("get-record"),
   getStandings: () => ipcRenderer.invoke("get-standings"),
   toggleExpand: () => ipcRenderer.invoke("toggle-expand"),

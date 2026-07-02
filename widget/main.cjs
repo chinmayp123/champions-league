@@ -1,7 +1,7 @@
 // Electron main process — a frameless, always-on-top desktop widget around the shared
 // data/model layer in ../lib.mjs. Main fetches + computes (Node, no CORS issues) and pushes
 // plain JSON to the renderer, which draws the compact/full UI.
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, Notification } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
@@ -18,7 +18,7 @@ function saveState(patch) {
 }
 let state = loadState();
 
-const COMPACT = { width: 290, height: 250 };
+const COMPACT = { width: 290, height: 300 }; // taller since knockouts: advance bar + 90' line
 const EXPANDED = { width: 960, height: 940 };
 // the expanded size to use — the user's saved drag-size if they've resized, else the default
 const expandedSize = () => ({ width: state.ew || EXPANDED.width, height: state.eh || EXPANDED.height });
@@ -84,18 +84,40 @@ function createWindow() {
   });
 }
 
+// Windows toast on goals / full time for the tracked match — the widget stays useful when it's
+// buried behind other windows. Compares against the previous poll of the SAME match, so the
+// first look at a game (or switching games) never fires a stale notification.
+let lastScoreState = null; // { id, h, a, state }
+function notifyGoals(m) {
+  if (!m || !Notification.isSupported()) { lastScoreState = null; return; }
+  const cur = { id: m.id, h: m.home?.score ?? null, a: m.away?.score ?? null, state: m.state };
+  const prev = lastScoreState;
+  lastScoreState = cur;
+  if (!prev || prev.id !== cur.id || cur.state === "pre" || cur.h == null || prev.h == null) return;
+  try {
+    if (cur.h !== prev.h || cur.a !== prev.a) {
+      new Notification({ title: `⚽ ${m.home.abbr} ${cur.h} – ${cur.a} ${m.away.abbr}`, body: m.statusText || "GOAL" }).show();
+    } else if (prev.state === "in" && cur.state === "post") {
+      new Notification({ title: `FT: ${m.home.abbr} ${cur.h} – ${cur.a} ${m.away.abbr}`, body: "Full time", silent: true }).show();
+    }
+  } catch { /* toasts are best-effort */ }
+}
+
 async function poll() {
   clearTimeout(timer);
   let nextDelay = 30000;
   try {
     const data = await lib.getWidgetState(state.query);
     lastData = data;
+    notifyGoals(data.match);
     if (win && !win.isDestroyed()) win.webContents.send("update", data);
     if (data.match?.halftime) nextDelay = 120000;          // back off at the break
     else if (data.match?.state === "post" || !data.match) nextDelay = 60000;
   } catch (e) {
     if (win && !win.isDestroyed()) win.webContents.send("update", { error: String(e?.message || e), matches: [] });
   }
+  // closing-line snapshot for pending bets near kickoff (CLV) — betlog throttles itself
+  lib.captureClosing?.().catch(() => {});
   timer = setTimeout(poll, nextDelay);
 }
 
@@ -176,9 +198,19 @@ ipcMain.handle("get-parlays", async () => {
   try { return await lib.getDailyParlays(10); }
   catch (e) { return { error: String(e?.message || e) }; }
 });
+// upcoming games + priced candidate legs for the Parlay Builder; never throws to the renderer
+ipcMain.handle("get-parlay-menu", async () => {
+  try { return await lib.getParlayMenu(); }
+  catch (e) { return { error: String(e?.message || e) }; }
+});
 // bet record + parlay history for the Record view; never throws to the renderer
 ipcMain.handle("get-record", async () => {
   try { return await lib.getRecord(); }
+  catch (e) { return { error: String(e?.message || e) }; }
+});
+// persist a user-built parlay from the Parlay Builder so it settles like the daily card
+ipcMain.handle("track-parlay", async (_e, payload) => {
+  try { return await lib.trackParlay(payload); }
   catch (e) { return { error: String(e?.message || e) }; }
 });
 // group standings + knockout bracket for the Standings view; never throws to the renderer

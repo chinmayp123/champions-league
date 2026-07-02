@@ -71,8 +71,8 @@ body {
 
 .body { flex: 1 1 auto; overflow-y: auto; padding: 13px 15px 15px; }
 /* fade content in on view switches (not on background data refreshes) */
-.body.swap { animation: fadein .15s ease; }
-@keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.body.swap { animation: fadein .18s ease; }
+@keyframes fadein { from { opacity: 0; transform: translateY(4px) scale(.995); } to { opacity: 1; transform: none; } }
 .body::-webkit-scrollbar { width: 7px; }
 .body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
 
@@ -117,6 +117,11 @@ body {
 .side.home { justify-content: flex-start; }
 .side.away { justify-content: flex-end; }
 .team { font-size: 17px; font-weight: 700; color: #d7dde6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* compact: smaller flags/gaps so three-letter abbrs + the score always fit in 290px */
+.compact .score-row { gap: 10px; }
+.compact .score-row .side { gap: 8px; }
+.compact .score-row .flag { width: 30px; height: 21px; }
+.compact .score { font-size: 26px; }
 .team.h { color: var(--home); } .team.a { color: var(--away); }
 .score { font-size: 30px; font-weight: 800; flex: 0 0 auto; letter-spacing: 1px; }
 .flag { width: 40px; height: 28px; object-fit: cover; border-radius: 3px; flex: 0 0 auto; box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
@@ -211,19 +216,57 @@ td.lead { font-weight: 700; color: #fff; }
 .standtbl td.num { text-align: right; color: #c7ced8; font-variant-numeric: tabular-nums; }
 .standtbl td.pts { font-weight: 800; color: #fff; }
 .standtbl tr.adv td.tm .pk-team { color: var(--green); }
-.brk-game {
-  -webkit-app-region: no-drag;
-  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
-  padding: 7px 8px; border-radius: 7px; cursor: pointer;
+/* bracket grid — one column per round, braces join feeder pairs to their next-round tie */
+.brk-path { font-size: 10.5px; margin: -2px 0 8px; }
+.brk-path { color: color-mix(in srgb, var(--gold, #e8c35a) 40%, var(--muted)); }
+.bracket { overflow-x: auto; padding: 2px 2px 10px; }
+.bracket::-webkit-scrollbar { height: 7px; }
+.bracket::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 4px; }
+/* inner tree: centers under a wide window, scrolls from the left edge when it overflows */
+.brk-tree { display: flex; gap: 14px; width: max-content; margin: 0 auto; }
+.brk-col { flex: 0 0 146px; display: flex; flex-direction: column; }
+.brk-col .brk-round { margin: 0 0 8px; align-self: flex-start; }
+/* shared height (tallest round, set as --rows by JS) is what keeps tie centers aligned:
+   each pair/slot gets an equal flex share, so a 4-game column spreads over the same span
+   as the 16-game one and every tie sits centered between its two feeders */
+.brk-col-games { display: flex; flex-direction: column; height: calc(var(--rows, 8) * 62px); }
+.brk-pair { flex: 1 1 0; display: flex; flex-direction: column; justify-content: space-around; position: relative; }
+.brk-slot { flex: 1 1 0; display: flex; flex-direction: column; justify-content: center; }
+/* the ] brace spanning a feeder pair; meets the fed card's left stub inside the column gap.
+   .linked/.fed only exist once both feeders of a tie are identified — no speculative lines */
+.brk-pair.linked::after {
+  content: ""; position: absolute; right: -8px; top: 25%; bottom: 25%; width: 7px;
+  border: 1px solid rgba(255,255,255,.26); border-left: 0; border-radius: 0 5px 5px 0;
 }
-.brk-game:hover { background: rgba(255,255,255,.06); }
-.brk-game.islive { background: rgba(70,217,138,.06); }
-.brk-game .l { display: flex; align-items: center; gap: 8px; min-width: 0; color: #dbe1e9; }
-.brk-game .l .flag { width: 20px; height: 14px; }
-.brk-game .pk-team { font-weight: 700; color: #e6eaf0; }
-.brk-game .pk-score { color: var(--muted); font-weight: 600; }
-.brk-game .r { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
-.brk-game .r.live { color: var(--green); font-weight: 700; }
+.brk-card.fed { position: relative; }
+.brk-card.fed::before {
+  content: ""; position: absolute; left: -7px; top: 50%; width: 7px; border-top: 1px solid rgba(255,255,255,.26);
+}
+.brk-pair.linked:has(.brk-card.mine)::after,
+.brk-card.fed.mine::before { border-color: color-mix(in srgb, var(--gold, #e8c35a) 45%, transparent); }
+
+.brk-card {
+  -webkit-app-region: no-drag;
+  background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 7px 4px; cursor: pointer; font-size: 11px;
+}
+.brk-card:hover { background: rgba(255,255,255,.09); }
+.brk-card.islive { border-color: rgba(70,217,138,.45); background: rgba(70,217,138,.07); }
+.brk-card.mine { border-color: var(--gold-dim, rgba(232,195,90,.35)); background: color-mix(in srgb, var(--gold, #e8c35a) 6%, rgba(255,255,255,.05)); }
+/* the champion's run — every tie they played, traced in gold once the final settles */
+.brk-card.champ {
+  border-color: color-mix(in srgb, var(--gold, #e8c35a) 65%, transparent);
+  background: color-mix(in srgb, var(--gold, #e8c35a) 10%, rgba(255,255,255,.05));
+  box-shadow: 0 0 9px color-mix(in srgb, var(--gold, #e8c35a) 25%, transparent);
+}
+.brk-t { display: flex; align-items: center; gap: 5px; padding: 1.5px 0; }
+.brk-t .flag { width: 15px; height: 10px; flex: 0 0 auto; }
+.bt-ab { font-weight: 700; color: #e6eaf0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-sc { font-weight: 700; font-variant-numeric: tabular-nums; color: #c7ced8; }
+.brk-t.win .bt-ab, .brk-t.win .bt-sc { color: var(--gold, #e8c35a); }
+.brk-t.out { opacity: .5; }
+.bt-meta { display: flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; }
+.bt-live { color: var(--green); font-weight: 700; }
 
 .disc { margin-top: 14px; font-size: 10px; color: #5c6675; line-height: 1.4; }
 
@@ -265,6 +308,62 @@ td.lead { font-weight: 700; color: #fff; }
 .leg-mark.miss { color: var(--pink); }
 .leg-mark.pend { color: var(--muted); }
 
+/* parlay builder view */
+.builder .p-sub { font-size: 10.5px; letter-spacing: .04em; margin: 2px 0 2px; }
+.bld-slip {
+  position: sticky; top: 0; z-index: 2;
+  background: rgba(122,162,255,.10); border: 1px solid rgba(122,162,255,.40);
+  border-radius: 11px; padding: 10px 12px 11px; margin-bottom: 4px;
+  backdrop-filter: blur(6px);
+}
+.bld-slip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bld-slip-head .label { margin: 0; }
+.bld-stake-wrap { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; }
+.bld-stake {
+  width: 52px; background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 6px;
+  color: var(--txt); font-size: 12px; padding: 3px 6px; text-align: right; font-family: inherit;
+}
+.bld-stake:focus { outline: none; border-color: var(--accent); }
+.bld-empty { font-size: 11px; margin-top: 6px; line-height: 1.4; }
+.bld-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 8px; }
+.bld-stat { background: rgba(0,0,0,.2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 5px; text-align: center; }
+.bld-val { font-size: 15px; font-weight: 800; }
+.bld-lbl { font-size: 9px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+.bld-verdict { font-size: 12px; font-weight: 700; margin-top: 9px; text-align: center; }
+.bld-verdict.up { color: var(--green); }
+.bld-verdict.neg { color: var(--pink); }
+.bld-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 10.5px; }
+.bld-foot-btns { flex: 0 0 auto; display: inline-flex; gap: 6px; align-items: center; }
+.bld-clear, .bld-track {
+  flex: 0 0 auto; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 10.5px; padding: 3px 10px; cursor: pointer; font-family: inherit;
+}
+.bld-clear { background: rgba(255,255,255,.07); color: var(--muted); }
+.bld-clear:hover { background: rgba(255,255,255,.13); color: var(--txt); }
+.bld-track { background: rgba(122,162,255,.18); border-color: rgba(122,162,255,.5); color: var(--accent); font-weight: 700; }
+.bld-track:hover { background: rgba(122,162,255,.30); }
+.bld-msg { margin-top: 8px; font-size: 11px; font-weight: 600; text-align: center; }
+.bld-msg.up { color: var(--green); }
+.bld-msg.neg { color: var(--pink); }
+.bld-game { margin: 12px 0 3px; display: flex; align-items: center; gap: 6px; }
+.bld-game .flag { width: 17px; height: 12px; }
+.bld-game .p-v { color: var(--muted); font-weight: 500; }
+.bld-leg {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-top: 4px;
+  background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 8px;
+  font-size: 11.5px; cursor: pointer; user-select: none;
+}
+.bld-leg:hover { background: rgba(255,255,255,.08); }
+.bld-leg.on { background: rgba(122,162,255,.14); border-color: rgba(122,162,255,.5); }
+.bld-tick {
+  flex: 0 0 auto; width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--muted);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800;
+  color: var(--accent);
+}
+.bld-leg.on .bld-tick { border-color: var(--accent); background: rgba(122,162,255,.25); }
+.bld-leg-txt { flex: 1 1 auto; min-width: 0; }
+.bld-leg-meta { flex: 0 0 auto; display: inline-flex; gap: 9px; align-items: baseline; font-size: 11px; }
+
 /* sections hidden in compact mode */
 .full-only { display: none; }
 .widget.expanded .full-only { display: block; }
@@ -291,3 +390,136 @@ td.lead { font-weight: 700; color: #fff; }
 
 /* small inline explainer under a section label */
 .hint { font-size: 10.5px; color: var(--muted); margin: -2px 0 5px; line-height: 1.35; }
+
+/* ── gold run: knockout-round theme + match header polish ─────────────── */
+
+/* hero — kit-colour ambient glow behind the match header */
+.hero {
+  margin: -13px -15px 11px; padding: 13px 15px 12px;
+  border-radius: 0 0 16px 16px;
+  background:
+    radial-gradient(120% 100% at 0% 30%, color-mix(in srgb, var(--home) 20%, transparent), transparent 55%),
+    radial-gradient(120% 100% at 100% 30%, color-mix(in srgb, var(--away) 20%, transparent), transparent 55%);
+}
+
+/* one-shot goal pop on the score */
+.score.bump { animation: bump .6s ease-out; }
+@keyframes bump {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.22); text-shadow: 0 0 16px color-mix(in srgb, var(--gold, #e8c35a) 70%, transparent); }
+  100% { transform: scale(1); text-shadow: 0 0 0 transparent; }
+}
+
+/* winning side at full time — gentle gold pulse, then rest */
+.side.won .flag { animation: wonpulse 1.5s ease-in-out 3; }
+.side.won .team { color: color-mix(in srgb, var(--gold, #e8c35a) 55%, #d7dde6); }
+@keyframes wonpulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+  50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--gold, #e8c35a) 60%, transparent), 0 0 13px color-mix(in srgb, var(--gold, #e8c35a) 40%, transparent); }
+}
+
+/* penalty shootout line under the score row */
+.pens { font-size: 11px; letter-spacing: .07em; text-align: center; margin-top: 3px; color: color-mix(in srgb, var(--gold, #e8c35a) 60%, var(--muted)); }
+
+/* pre-match kickoff countdown */
+.countdown { text-align: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.countdown #kick-time { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--accent); }
+
+/* "to advance" probability bar — richer sibling of .winbar */
+.advbar { display: flex; gap: 2px; height: 11px; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+.advbar .h, .advbar .a {
+  border-radius: 3px;
+  background-image: linear-gradient(rgba(255,255,255,.22), rgba(255,255,255,0) 55%);
+  box-shadow: inset 0 0 5px rgba(255,255,255,.14);
+}
+.advbar .h { background-color: var(--home); } .advbar .a { background-color: var(--away); }
+.advlegend { display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; color: #c7ced8; margin-top: 4px; }
+.adv90 { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+
+/* round pill in the drag bar */
+.round-pill {
+  flex: 0 0 auto; white-space: nowrap;
+  font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--gold, #e8c35a);
+  border: 1px solid color-mix(in srgb, var(--gold, #e8c35a) 40%, transparent);
+  background: color-mix(in srgb, var(--gold, #e8c35a) 10%, transparent);
+  padding: 1px 6px; border-radius: 5px;
+}
+
+/* bracket view upgrades */
+.label.brk-round {
+  display: inline-block; padding: 2px 8px 2px 7px; border-radius: 0 5px 5px 0;
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  color: #c7ced8;
+}
+.brk-pred {
+  font-size: 10px; padding: 1px 6px; border-radius: 5px; white-space: nowrap;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
+}
+
+/* knockout theme root — championship gold, applied via #app.ko from JS */
+#app.ko {
+  --gold: #e8c35a;
+  --gold-dim: rgba(232, 195, 90, .35);
+  --accent: var(--gold);   /* recolors on-buttons, parlay odds, slip accents */
+  background:
+    radial-gradient(120% 55% at 50% 0%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 60%),
+    var(--bg);
+}
+#app.ko .bar {
+  border-bottom-color: transparent;
+  background: linear-gradient(90deg, transparent 3%, color-mix(in srgb, var(--gold) 40%, transparent) 50%, transparent 97%) left bottom / 100% 1px no-repeat;
+}
+#app.ko .bar .title { color: #ece5d3; }
+#app.ko .hero {
+  background:
+    radial-gradient(120% 100% at 0% 30%, color-mix(in srgb, var(--home) 20%, transparent), transparent 55%),
+    radial-gradient(120% 100% at 100% 30%, color-mix(in srgb, var(--away) 20%, transparent), transparent 55%),
+    radial-gradient(90% 65% at 50% 0%, color-mix(in srgb, var(--gold) 7%, transparent), transparent 60%);
+}
+#app.ko .label.brk-round { color: color-mix(in srgb, var(--gold) 55%, #d7dde6); }
+
+/* sparkline charts (win-prob timeline, bankroll P/L) — CSP-safe inline SVG */
+.probwrap { margin-top: 6px; }
+.spark-svg { display: block; width: 100%; height: 40px; }
+.spark-svg .spark-line { fill: none; stroke: var(--home); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark-svg .spark-zero { stroke: rgba(255,255,255,.18); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.spark-svg.prob { height: 36px; }
+.spark-svg.pl-up .spark-line { stroke: var(--green); }
+.spark-svg.pl-neg .spark-line { stroke: var(--pink); }
+
+/* penalty shootout — kick-by-kick dots per team */
+.pso { margin-top: 5px; display: flex; flex-direction: column; gap: 2px; align-items: center; }
+.pso-row { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.pso-ab { font-weight: 700; color: var(--muted); width: 30px; text-align: right; }
+.pso-dot { font-size: 10px; }
+.pso-dot.ok { color: var(--gold, #e8c35a); }
+.pso-dot.no { color: var(--pink); opacity: .8; }
+
+/* world champions banner — the final's FT gets one honest moment of drama */
+.champs {
+  margin-top: 9px; text-align: center; font-size: 13px; font-weight: 800; letter-spacing: .14em;
+  color: var(--gold, #e8c35a);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--gold, #e8c35a) 55%, transparent);
+  animation: champglow 2.2s ease-in-out infinite;
+}
+@keyframes champglow {
+  0%, 100% { text-shadow: 0 0 8px color-mix(in srgb, var(--gold, #e8c35a) 35%, transparent); }
+  50% { text-shadow: 0 0 18px color-mix(in srgb, var(--gold, #e8c35a) 75%, transparent); }
+}
+
+/* micro-polish — hover lift (base transitions so it animates both ways) */
+.card, .parlay { transition: transform .12s ease, box-shadow .12s ease; }
+.pick .row, .brk-card { transition: transform .12s ease, box-shadow .12s ease, background .12s ease; }
+.card:hover, .parlay:hover, .pick .row:hover, .brk-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,.28);
+}
+
+/* calm everything down for reduced-motion users */
+@media (prefers-reduced-motion: reduce) {
+  .score.bump, .side.won .flag, .body.swap,
+  .live .dot, .al-lbl .dot, .champs { animation: none; }
+  .card:hover, .parlay:hover, .pick .row:hover, .brk-card:hover { transform: none; box-shadow: none; }
+}
