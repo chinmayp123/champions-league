@@ -1061,7 +1061,7 @@ function renderParlays(data) {
 
   // PRIMARY (tracked): one straight single per game — the best in-band leg
   if (singles.length) {
-    wrap.appendChild(h("div", { class: "label", text: "Singles · one bet per game" }));
+    wrap.appendChild(h("div", { class: "label", text: "Singles · max two per game, never correlated" }));
     for (const g of singles) wrap.appendChild(parlayCard(g.bet, gameTitle(g.game), false));
   }
 
@@ -1077,8 +1077,8 @@ function renderParlays(data) {
 
 // --- record + history view ---
 function historyCard(p) {
-  const result = p.settled ? p.result : "pending"; // "win" | "loss" | "pending"
-  const badge = h("span", { class: `rec-badge ${result}`, text: result === "win" ? "WON" : result === "loss" ? "LOST" : "PENDING" });
+  const result = p.settled ? p.result : "pending"; // "win" | "loss" | "push" | "pending"
+  const badge = h("span", { class: `rec-badge ${result}`, text: result === "win" ? "WON" : result === "loss" ? "LOST" : result === "push" ? "PUSH" : "PENDING" });
   const title = p.type === "cross" ? "All games" : p.game;
   const card = h("div", { class: "parlay hist" }, [
     h("div", { class: "p-head" }, [
@@ -1088,8 +1088,8 @@ function historyCard(p) {
   ]);
   const am2prob = (ml) => (ml == null ? null : ml > 0 ? 100 / (ml + 100) : -ml / (-ml + 100));
   for (const l of p.legs) {
-    const r = l.result; // "hit" | "miss" | null
-    const mark = r === "hit" ? "✓" : r === "miss" ? "✗" : "·";
+    const r = l.result; // "hit" | "miss" | "push" | null
+    const mark = r === "hit" ? "✓" : r === "miss" ? "✗" : r === "push" ? "＝" : "·";
     const meta = [h("span", { text: l.finalScore || fmtAm(l.ml) })];
     // per-leg CLV: bet price vs the captured close — "good bet, bad luck" vs "bad bet, got lucky"
     if (l.closeMl != null && l.ml != null) {
@@ -1108,7 +1108,7 @@ function historyCard(p) {
     h("span", { text: `$${p.stake} → $${p.payout.toFixed(2)}` }),
     h("span", {
       class: result === "win" ? "up" : result === "loss" ? "neg" : "",
-      text: result === "win" ? `+$${(p.payout - p.stake).toFixed(2)}` : result === "loss" ? `−$${p.stake.toFixed(2)}` : "pending",
+      text: result === "win" ? `+$${(p.payout - p.stake).toFixed(2)}` : result === "loss" ? `−$${p.stake.toFixed(2)}` : result === "push" ? "$0 (stake back)" : "pending",
     }),
   ]));
   return card;
@@ -1153,7 +1153,7 @@ function renderRecord(data) {
     const pts = [];
     for (const d of asc) {
       let dp = 0, any = false;
-      for (const p of d.parlays || []) if (p.settled) { any = true; dp += p.result === "win" ? p.payout - p.stake : -p.stake; }
+      for (const p of d.parlays || []) if (p.settled) { any = true; dp += p.result === "win" ? p.payout - p.stake : p.result === "push" ? 0 : -p.stake; }
       if (any) { cum += dp; pts.push(cum); }
     }
     const graph = pts.length >= 2 ? sparkline(pts, { height: 40, cls: cum >= 0 ? "pl-up" : "pl-neg", midline: 0 }) : null;

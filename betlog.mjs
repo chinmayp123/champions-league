@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { summary, statMap, ml2prob, poissonCdf } from "./lib.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelBTTS } from "./fanduel.mjs";
-import { oddspapiBTTS } from "./oddspapi.mjs";
+import { oddspapiBTTS, oddspapiSides } from "./oddspapi.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LOG_DIR = join(HERE, "bets");
@@ -75,11 +75,36 @@ export function trackParlay({ legs, stake = 10, date } = {}) {
 }
 
 // grade a single leg against a final result { hs, as, hAbbr, aAbbr, corners }.
-// Returns true (hit) / false (miss) / null (can't grade — e.g. player props, or corner data missing)
+// Returns true (hit) / false (miss) / "push" (stake refunded — DNB draw, line landed exactly) /
+// null (can't grade — e.g. player props, or corner data missing)
 function gradeLeg(leg, f) {
   if (leg.market === "Moneyline") {
     const winner = f.hs > f.as ? f.hAbbr : f.as > f.hs ? f.aAbbr : "Draw";
     return leg.pick === winner;
+  }
+  if (leg.market === "DNB") {
+    if (f.hs === f.as) return "push"; // draw refunds the stake
+    const winner = f.hs > f.as ? f.hAbbr : f.aAbbr;
+    return leg.pick.replace(/\s*DNB$/i, "") === winner;
+  }
+  if (leg.market === "TeamTotal") {
+    const m = /^(\S+)\s+(Over|Under)\s+([\d.]+)/i.exec(leg.pick || "");
+    if (!m) return null;
+    const goals = m[1] === f.hAbbr ? f.hs : m[1] === f.aAbbr ? f.as : null;
+    if (goals == null) return null;
+    const L = parseFloat(m[3]);
+    if (goals === L) return "push"; // we only bet half-lines, but grade integer lines safely
+    return /over/i.test(m[2]) ? goals > L : goals < L;
+  }
+  if (leg.market === "Spread") {
+    const m = /^(\S+)\s+([+-][\d.]+)/.exec(leg.pick || "");
+    if (!m) return null;
+    const own = m[1] === f.hAbbr ? f.hs : m[1] === f.aAbbr ? f.as : null;
+    const opp = m[1] === f.hAbbr ? f.as : m[1] === f.aAbbr ? f.hs : null;
+    if (own == null) return null;
+    const adj = own + parseFloat(m[2]) - opp;
+    if (adj === 0) return "push";
+    return adj > 0;
   }
   if (leg.market === "Total") {
     const L = parseFloat(leg.pick.replace(/[^0-9.]/g, ""));
@@ -154,20 +179,30 @@ export async function settle() {
   for (const day of data.days || []) {
     for (const p of day.parlays) {
       if (p.settled) continue;
-      // settle only once EVERY leg is graded hit/miss. A leg that's final-but-ungradeable (player
-      // prop with no scorer data, missing corner stats) keeps the whole parlay PENDING rather than
-      // silently dropping it from the win test — which used to settle such parlays as a false win.
-      let allGraded = true, everyHit = true;
+      // settle only once EVERY leg is graded hit/miss/push. A leg that's final-but-ungradeable
+      // (player prop with no scorer data, missing corner stats) keeps the whole parlay PENDING
+      // rather than silently dropping it from the win test — which used to settle such parlays as
+      // a false win. A PUSHED leg (DNB draw, line landed exactly) refunds: it drops out of the
+      // payout multiplication; a parlay where every leg pushed settles as "push" (stake back).
+      let allGraded = true, everyHit = true, anyPush = false, allPush = true;
       for (const leg of p.legs) {
         const f = await finalOf(leg.id);
         if (!f) { allGraded = false; continue; }
         const hit = gradeLeg(leg, f);
-        leg.result = hit == null ? null : hit ? "hit" : "miss";
+        leg.result = hit == null ? null : hit === "push" ? "push" : hit ? "hit" : "miss";
         leg.finalScore = `${f.hAbbr} ${f.hs}-${f.as} ${f.aAbbr}`;
         if (hit == null) allGraded = false;      // final but can't grade -> stay pending
-        else if (hit === false) everyHit = false;
+        else if (hit === "push") anyPush = true;
+        else { allPush = false; if (hit === false) everyHit = false; }
       }
-      if (allGraded) { p.settled = true; p.result = everyHit ? "win" : "loss"; }
+      if (allGraded) {
+        p.settled = true;
+        p.result = !everyHit ? "loss" : allPush ? "push" : "win";
+        if (p.result === "win" && anyPush) {
+          const dec = p.legs.reduce((x, l) => x * (l.result === "push" ? 1 : (amToDecimal(l.ml) || 1)), 1);
+          p.payout = p.stake * dec;
+        }
+      }
     }
   }
   write(data);
@@ -180,7 +215,7 @@ export async function settle() {
 // clean opposite, so we estimate $ P/L by inverting the logged price across an assumed two-way
 // overround. Moneyline is 3-way — "fade the draw/dog" isn't a single bet — so it counts toward the
 // hit-rate read but NOT the $ estimate. Legs are deduped (a cross leg repeats its same-game leg).
-const FADE_TWO_WAY = new Set(["Total", "BTTS", "Corners"]);
+const FADE_TWO_WAY = new Set(["Total", "BTTS", "Corners", "TeamTotal", "Spread", "DNB"]);
 const FADE_VIG = 1.045;   // assumed two-way overround, for inverting the model-side price
 const FADE_STAKE = 10;    // hypothetical flat stake per faded leg
 function fadeStats(days) {
@@ -268,13 +303,14 @@ export function goalsBias() {
 }
 
 // --- learned edge-trust factor (replaces the hand-picked "trust half the edge" rule) ---
-// How much of the model-vs-market disagreement on DERIVED markets (Total/BTTS/Corners) has been
+// How much of the model-vs-market disagreement on DERIVED markets (Total/BTTS/Corners/TeamTotal/
+// Spread — everything Poisson-priced; DNB is market-anchored like ML and stays out) has been
 // real? Regress outcomes on the claimed edge: hit ≈ implied + β·edge. β̂ = Σe·(hit−impl) / Σe²
 // over settled derived legs. β=1 → edges fully real, β=0 → pure noise, β<0 → anti-signal.
 // Shrunk toward 0.5 for small samples (same pattern as goalsBias), clamped to [0.2, 1.0] so the
 // model always claims SOME edge on legs it selects but can never claim more than the raw number.
 // Self-correcting: if the model's edges start landing, β rises and earns the trust back.
-const TRUST_MARKETS = new Set(["Total", "BTTS", "Corners"]);
+const TRUST_MARKETS = new Set(["Total", "BTTS", "Corners", "TeamTotal", "Spread"]);
 const TRUST_SHRINK = 30;                 // pseudo-legs pulling β toward 0.5
 const TRUST_MIN = 0.2, TRUST_MAX = 1.0;
 export function edgeTrust() {
@@ -344,12 +380,15 @@ export async function captureClosing() {
     }
     if (!meta || now < meta.date - CLV_BEFORE || now > meta.date + CLV_AFTER) continue;
     const wantBTTS = legs.some((l) => l.market === "BTTS");
-    // BTTS close from the SAME chain the bet was priced on (OddsPapi primary, FanDuel fallback) —
-    // the FanDuel public path alone stopped matching WC games, which silently skipped BTTS closes.
-    // OddsPapi's 30-min odds cache is shared with the parlay generator, so this costs ~no quota.
-    const [pb, btts] = await Promise.all([
+    const wantSides = legs.some((l) => l.market === "DNB" || l.market === "TeamTotal" || l.market === "Spread");
+    // BTTS/DNB/TeamTotal/Spread closes from the SAME chain the bets were priced on (OddsPapi
+    // primary, FanDuel fallback for BTTS) — the FanDuel public path alone stopped matching WC
+    // games, which silently skipped BTTS closes. OddsPapi's 30-min odds cache is shared with the
+    // parlay generator, so this costs ~no quota.
+    const [pb, btts, sides] = await Promise.all([
       actionPublicBetting(meta.homeRef, meta.awayRef),
       wantBTTS ? oddspapiBTTS(meta.homeRef, meta.awayRef).then((r) => r || fanduelBTTS(meta.homeRef, meta.awayRef)).catch(() => null) : null,
+      wantSides ? oddspapiSides(meta.homeRef, meta.awayRef).catch(() => null) : null,
     ]);
     const fd = pb?.fanduel;
     for (const l of legs) {
@@ -364,6 +403,27 @@ export async function captureClosing() {
         if (L === fd.total.line) close = /over/i.test(l.pick) ? fd.total.over : fd.total.under;
       } else if (l.market === "BTTS" && btts) {
         close = /yes/i.test(l.pick) ? btts.yes : btts.no;
+      } else if (l.market === "DNB" && sides?.dnb) {
+        const side = l.pick.replace(/\s*DNB$/i, "");
+        close = side === meta.homeRef.abbr ? sides.dnb.home : side === meta.awayRef.abbr ? sides.dnb.away : null;
+      } else if (l.market === "TeamTotal" && sides?.teamTotals) {
+        // only comparable at the SAME line — a different team total is a different bet
+        const m = /^(\S+)\s+(Over|Under)\s+([\d.]+)/i.exec(l.pick || "");
+        if (m) {
+          const list = m[1] === meta.homeRef.abbr ? sides.teamTotals.home : m[1] === meta.awayRef.abbr ? sides.teamTotals.away : [];
+          const line = (list || []).find((x) => x.line === parseFloat(m[3]));
+          if (line) close = /over/i.test(m[2]) ? line.over : line.under;
+        }
+      } else if (l.market === "Spread" && sides?.spreads) {
+        // handicaps are quoted from the home side's perspective; an away pick at +1.5 lives on
+        // the market whose (home) handicap is -1.5
+        const m = /^(\S+)\s+([+-][\d.]+)/.exec(l.pick || "");
+        if (m) {
+          const v = parseFloat(m[2]);
+          const isHome = m[1] === meta.homeRef.abbr;
+          const row = sides.spreads.find((s) => s.hcap === (isHome ? v : -v));
+          if (row) close = isHome ? row.home : row.away;
+        }
       }
       if (close != null) { l.closeMl = close; l.closeAt = new Date(now).toISOString(); captured++; }
     }
@@ -386,7 +446,11 @@ function computeStats(days) {
   }
   const settled = days.flatMap((d) => d.parlays).filter((p) => p.settled);
   let staked = 0, returned = 0, wins = 0;
-  for (const p of settled) { staked += p.stake; if (p.result === "win") { returned += p.payout; wins++; } }
+  for (const p of settled) {
+    staked += p.stake;
+    if (p.result === "win") { returned += p.payout; wins++; }
+    else if (p.result === "push") returned += p.stake; // refunded, not lost
+  }
   // CLV: implied prob at close minus at bet — positive = we beat the close (got the longer price
   // on the same side). Counted for every leg with a captured close, settled or not: CLV is known
   // at kickoff, which is exactly why it reads edge faster than results do. Deduped like fadeStats.

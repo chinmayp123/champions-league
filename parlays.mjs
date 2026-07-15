@@ -1,11 +1,12 @@
 // parlays — daily $10 STRAIGHT-SINGLES generator for the FanDuel bankroll experiment.
 //
-// For each upcoming game it builds candidate legs (moneyline + total + corners + BTTS + scorer)
-// from the model's probabilities priced against real FanDuel odds, then bets the single best
-// in-band leg per game as a STRAIGHT SINGLE. Singles are the tracked card: they let a real edge
-// express itself instead of compounding the book's margin across correlated same-game legs. A
-// single cross-game longshot (one leg per game) is still produced, but purely "for fun" — it is
-// NOT logged or settled.
+// For each upcoming game it builds candidate legs (moneyline + total + corners + BTTS + scorer
+// + DNB + team totals + Asian handicap) from the model's probabilities priced against real book
+// odds, then bets up to TWO straight singles per game: the best in-band leg on the RESULT axis
+// (ML/DNB/Spread) and on the GOALS axis (Total/TeamTotal/BTTS) — never a correlated pair.
+// Singles are the tracked card: they let a real edge express itself instead of compounding the
+// book's margin across correlated same-game legs. A single cross-game longshot (one leg per
+// game) is still produced, but purely "for fun" — it is NOT logged or settled.
 //
 // WHY SINGLES: a 3-leg same-game parlay multiplies both the model's probabilities AND its errors,
 // and the legs are correlated (Under + Draw + BTTS-No all die together when a game runs hot), so
@@ -20,7 +21,7 @@ import { scoreboardOn, ymd, summary, scorePrediction, pregameProjections, matchC
 import { fotmobXG, fotmobPlayerSOT } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelCorners, fanduelBTTS, fanduelProps } from "./fanduel.mjs";
-import { oddspapiCorners, oddspapiBTTS } from "./oddspapi.mjs";
+import { oddspapiCorners, oddspapiBTTS, oddspapiSides } from "./oddspapi.mjs";
 
 const amToDec = (ml) => (ml == null ? null : ml > 0 ? ml / 100 + 1 : 100 / -ml + 1);
 const decToAm = (d) => (d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 / (d - 1)));
@@ -92,7 +93,10 @@ async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
     // toward 0.5, clamped [0.2, 1]). Selection still bands on rawEdge; this fixes the claimed
     // prob, EV, Kelly and the calibration data we log going forward, and earns trust back
     // automatically if the model's edges start landing.
-    const trusted = market === "Moneyline" ? rawEdge : rawEdge * trust;
+    // DNB is a pure renormalisation of the same market-anchored win probs the ML legs use, so it
+    // shares Moneyline's "honest" status; every Poisson-derived market gets the learned shrink.
+    const honest = market === "Moneyline" || market === "DNB";
+    const trusted = honest ? rawEdge : rawEdge * trust;
     const edge = Math.sign(trusted) * Math.min(Math.abs(trusted), MAX_EDGE); // capped, for EV/Kelly only
     cands.push({ id: ev.id, game, market, pick, group, modelProb: impl + edge, ml, dec, impl, edge, rawEdge, coherent, fadePublic: fade });
   };
@@ -174,6 +178,59 @@ async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
     }
   } catch { /* no BTTS market — fine */ }
 
+  // Draw No Bet / team totals / Asian handicap — markets the cached OddsPapi response already
+  // carried but we previously threw away, priced at the best line across configured books.
+  try {
+    const ex = await oddspapiSides(homeRef, awayRef);
+    if (ex) {
+      // DNB: the model's win probs renormalised over "no draw" (a draw refunds the stake, so the
+      // bet lives in the conditional space). Same market-anchored numbers as the ML legs.
+      const pNoDraw = pred.wH + pred.wA;
+      if (ex.dnb && pNoDraw > 0) {
+        if (ex.dnb.home != null)
+          pushLeg("DNB", `${h.team.abbreviation} DNB`, pred.wH / pNoDraw, ex.dnb.home, "DNB", h.team.abbreviation === mlFav, fadePublic(h.team.abbreviation));
+        if (ex.dnb.away != null)
+          pushLeg("DNB", `${a.team.abbreviation} DNB`, pred.wA / pNoDraw, ex.dnb.away, "DNB", a.team.abbreviation === mlFav, fadePublic(a.team.abbreviation));
+      }
+      // team totals: the most balanced posted line per side, priced off that side's own lambda —
+      // isolates the half of the Poisson we trust more than the joint scoreline.
+      const ttLeg = (side, lam, abbr) => {
+        const posted = (ex.teamTotals?.[side] || []).filter((l) => l.line % 1 !== 0); // half-lines: no pushes
+        if (!posted.length || !(lam > 0)) return;
+        const bal = posted.slice().sort((x, y) => Math.abs(1 / amToDec(x.over) - 0.5) - Math.abs(1 / amToDec(y.over) - 0.5))[0];
+        const pOver = 1 - poissonCdf(Math.floor(bal.line), lam);
+        pushLeg("TeamTotal", `${abbr} Over ${bal.line}`, pOver, bal.over, `TT-${abbr}`, pOver >= 0.5);
+        pushLeg("TeamTotal", `${abbr} Under ${bal.line}`, 1 - pOver, bal.under, `TT-${abbr}`, pOver < 0.5);
+      };
+      ttLeg("home", pred.expH, h.team.abbreviation);
+      ttLeg("away", pred.expA, a.team.abbreviation);
+      // Asian handicap (half-lines only, so no pushes): model prob from the Poisson margin
+      // distribution. Handicaps are quoted from the home side's perspective; "home h" covers when
+      // margin + h > 0. A side GETTING goals is also coherent on a predicted draw (it wins then).
+      const pmf = (lam) => {
+        const p = [Math.exp(-lam)];
+        for (let k = 1; k <= 12; k++) p.push(p[k - 1] * lam / k);
+        return p;
+      };
+      const pmH = pmf(pred.expH), pmA = pmf(pred.expA);
+      const pMarginGT = (x) => { // P(homeGoals - awayGoals > x)
+        let p = 0;
+        for (let i = 0; i <= 12; i++) for (let j = 0; j <= 12; j++) if (i - j > x) p += pmH[i] * pmA[j];
+        return p;
+      };
+      const fmtH = (v) => (v > 0 ? `+${v}` : `${v}`);
+      for (const s of ex.spreads || []) {
+        const pCover = pMarginGT(-s.hcap);
+        const cohH = h.team.abbreviation === mlFav || (mlFav === "Draw" && s.hcap > 0);
+        const cohA = a.team.abbreviation === mlFav || (mlFav === "Draw" && s.hcap < 0);
+        if (s.home != null)
+          pushLeg("Spread", `${h.team.abbreviation} ${fmtH(s.hcap)}`, pCover, s.home, "Spread", cohH, fadePublic(h.team.abbreviation));
+        if (s.away != null)
+          pushLeg("Spread", `${a.team.abbreviation} ${fmtH(-s.hcap)}`, 1 - pCover, s.away, "Spread", cohA, fadePublic(a.team.abbreviation));
+      }
+    }
+  } catch { /* no extra markets posted — fine */ }
+
   return { id: ev.id, game, date: ev.date, candidates: cands };
 }
 
@@ -187,10 +244,22 @@ function bettable(l) {
   return l.market !== "Corners" && l.coherent && !l.fadePublic && l.rawEdge >= EDGE_MIN && l.rawEdge < EDGE_MAX;
 }
 
-// the single best bettable leg for a game, ranked by hit probability (steadiest bet — this is
-// what we stake as a straight single), or null if the game has no qualifying leg.
-function bestSingle(cands) {
-  return cands.filter(bettable).sort((a, b) => b.modelProb - a.modelProb)[0] || null;
+// correlation guard: at most TWO singles per game, and never a correlated pair. Markets sort
+// into two axes — RESULT (who wins: ML/DNB/Spread) and GOALS (how many: Total/TeamTotal/BTTS/
+// Corners). Within an axis every market re-expresses the same model opinion, so a second leg
+// from the same axis would double-stake one opinion, not diversify; one leg per axis max.
+const AXIS = { Moneyline: "result", DNB: "result", Spread: "result", Total: "goals", TeamTotal: "goals", BTTS: "goals", Corners: "goals" };
+
+// the best bettable leg per axis for a game (each staked as its own straight single), ranked
+// by hit probability within the axis. Scorer legs have no axis — never auto-bet (display-only).
+function bestSingles(cands) {
+  const best = {};
+  for (const l of cands.filter(bettable)) {
+    const ax = AXIS[l.market];
+    if (!ax) continue;
+    if (!best[ax] || l.modelProb > best[ax].modelProb) best[ax] = l;
+  }
+  return [best.result, best.goals].filter(Boolean);
 }
 
 // the longest-priced bettable leg for a game (for the for-fun cross-game longshot), or null
@@ -210,6 +279,9 @@ function legReason(l) {
     : l.group === "Corners" ? (/under/i.test(l.pick) ? "model projects few corners" : "model projects plenty of corners")
     : l.group === "BTTS" ? (/yes/i.test(l.pick) ? "model expects both teams to score" : "model expects at least one clean sheet")
     : l.group === "Scorer" ? "model rates this scorer vs the book's anytime price (opponent-adjusted xG)"
+    : l.market === "DNB" ? "backing the model's winner with draw insurance (stake back on a draw)"
+    : l.market === "TeamTotal" ? (/under/i.test(l.pick) ? "model projects this side kept quiet" : "model projects this side to score freely")
+    : l.market === "Spread" ? "model's margin distribution clears this handicap"
     : "positive-edge spot";
   return `${tag} — model ${mp}% vs market ${im}% (${e >= 0 ? "+" : ""}${e}% edge)`;
 }
@@ -276,11 +348,11 @@ export async function generateDailyParlays(stake = 10, events = null) {
     const ml = await matchLegs(ev, cal.goalsBias, cal.trust).catch(() => null);
     if (ml && ml.candidates.length) games.push(ml);
   }
-  // PRIMARY (tracked): one straight single per game — the best in-band leg, staked on its own so
-  // a real edge can play out instead of compounding the book's margin across correlated legs.
-  const singles = games
-    .map((g) => { const l = bestSingle(g.candidates); return l ? { game: g.game, date: g.date, bet: buildParlay([l], stake) } : null; })
-    .filter(Boolean);
+  // PRIMARY (tracked): up to two straight singles per game — the best in-band leg on each of the
+  // result and goals axes (never a correlated pair), each staked on its own so a real edge can
+  // play out instead of compounding the book's margin across correlated legs.
+  const singles = games.flatMap((g) =>
+    bestSingles(g.candidates).map((l) => ({ game: g.game, date: g.date, bet: buildParlay([l], stake) })));
   // FOR FUN (NOT tracked / not logged): one cross-game longshot — the longest-priced in-band leg
   // per game, across DIFFERENT games so the legs are uncorrelated. Max payout, low hit rate.
   const longLegs = games.map((g) => longLeg(g.candidates)).filter(Boolean);

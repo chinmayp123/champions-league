@@ -303,6 +303,7 @@ td.lead { font-weight: 700; color: #fff; }
 .rec-badge.win { background: rgba(70,217,138,.18); color: var(--green); }
 .rec-badge.loss { background: rgba(226,92,138,.2); color: var(--pink); }
 .rec-badge.pending { background: rgba(255,255,255,.1); color: var(--muted); }
+.rec-badge.push { background: rgba(255,255,255,.14); color: var(--text); }
 .leg-mark { flex: 0 0 auto; width: 14px; text-align: center; font-weight: 800; }
 .leg-mark.hit { color: var(--green); }
 .leg-mark.miss { color: var(--pink); }

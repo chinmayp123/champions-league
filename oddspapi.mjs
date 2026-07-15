@@ -69,11 +69,20 @@ async function tournamentOdds(book) {
 
 // the markets object for the first book that covers this ESPN match (home/away { name, abbr })
 async function matchMarkets(home, away) {
-  if (!KEY) return null;
+  const all = await allBookMarkets(home, away, true);
+  return all.length ? all[0] : null;
+}
+
+// the markets object for EVERY configured book that covers this match — the basis for line
+// shopping (best price per outcome across books). `firstOnly` keeps the old single-book cost
+// profile for callers that don't shop.
+async function allBookMarkets(home, away, firstOnly = false) {
+  if (!KEY) return [];
   const names = await fixtureNames();
   const wantH = [norm(home.abbr), norm(home.name)].filter(Boolean);
   const wantA = [norm(away.abbr), norm(away.name)].filter(Boolean);
   const hit = (toks, wants) => wants.some((w) => toks.some((t) => t && (t === w || t.includes(w) || w.includes(t))));
+  const out = [];
   for (const book of BOOKS) {
     let odds;
     try { odds = await tournamentOdds(book); } catch { continue; }
@@ -81,9 +90,12 @@ async function matchMarkets(home, away) {
       const toks = names[f.fixtureId];
       return f.bookmakerOdds?.[book] && toks && hit(toks, wantH) && hit(toks, wantA);
     });
-    if (fx) return { markets: fx.bookmakerOdds[book].markets || {}, book };
+    if (fx) {
+      out.push({ markets: fx.bookmakerOdds[book].markets || {}, book });
+      if (firstOnly) return out;
+    }
   }
-  return null;
+  return out;
 }
 
 // american price for the first outcome whose name matches rx, via the market catalogue
@@ -115,6 +127,55 @@ export async function oddspapiCorners(home, away) {
     // main line = the most balanced (over-implied closest to 50%) — the book's headline number
     lines.sort((a, b) => Math.abs(implied(a.over) - 0.5) - Math.abs(implied(b.over) - 0.5));
     return { ...lines[0], source: "oddspapi" };
+  } catch { return null; }
+}
+
+// Draw No Bet + team totals + Asian handicap for a match, from the SAME cached
+// odds-by-tournaments response the corner/BTTS calls use — these markets were always in the
+// payload, we just threw them away. Prices are the BEST across configured books (line shopping);
+// outcome names per the catalogue: 1x2-style markets use "1"/"2", totals use "Over"/"Under",
+// spread handicaps are from team 1's (home's) perspective. Only half-goal handicaps are kept so
+// there are no pushes to model on spreads. Returns null on any miss, never throws.
+// Shape: { dnb: {home,away}|null, teamTotals: {home:[{line,over,under}],away:[...]}, spreads:[{hcap,home,away}] }
+export async function oddspapiSides(home, away) {
+  try {
+    const books = await allBookMarkets(home, away);
+    if (!books.length) return null;
+    const ref = await marketsRef();
+    const dec = (ml) => (ml > 0 ? ml / 100 + 1 : 100 / -ml + 1);
+    const better = (a, b) => (a == null ? b : b == null ? a : dec(b) > dec(a) ? b : a);
+    const dnb = { home: null, away: null };
+    const tt = { home: new Map(), away: new Map() };
+    const sp = new Map();
+    for (const { markets } of books) {
+      for (const id of Object.keys(markets)) {
+        const r = ref[id];
+        if (!r || /half/i.test(r.marketName)) continue;
+        if (r.marketType === "drawnobet") {
+          dnb.home = better(dnb.home, priceByName(markets[id], r, /^1$/));
+          dnb.away = better(dnb.away, priceByName(markets[id], r, /^2$/));
+        } else if ((r.marketType === "teamtotals-team1" || r.marketType === "teamtotals-team2") && r.handicap != null) {
+          const side = r.marketType.endsWith("team1") ? "home" : "away";
+          const cur = tt[side].get(r.handicap) || { line: r.handicap, over: null, under: null };
+          cur.over = better(cur.over, priceByName(markets[id], r, /over/i));
+          cur.under = better(cur.under, priceByName(markets[id], r, /under/i));
+          tt[side].set(r.handicap, cur);
+        } else if (r.marketType === "spreads" && r.handicap != null && Math.abs(r.handicap % 1) === 0.5 && Math.abs(r.handicap) <= 2.5) {
+          const cur = sp.get(r.handicap) || { hcap: r.handicap, home: null, away: null };
+          cur.home = better(cur.home, priceByName(markets[id], r, /^1$/));
+          cur.away = better(cur.away, priceByName(markets[id], r, /^2$/));
+          sp.set(r.handicap, cur);
+        }
+      }
+    }
+    const lines = (m) => [...m.values()].filter((l) => l.over != null && l.under != null).sort((a, b) => a.line - b.line);
+    const out = {
+      dnb: dnb.home != null || dnb.away != null ? dnb : null,
+      teamTotals: { home: lines(tt.home), away: lines(tt.away) },
+      spreads: [...sp.values()].filter((s) => s.home != null || s.away != null).sort((a, b) => a.hcap - b.hcap),
+      source: "oddspapi",
+    };
+    return out.dnb || out.teamTotals.home.length || out.teamTotals.away.length || out.spreads.length ? out : null;
   } catch { return null; }
 }
 
