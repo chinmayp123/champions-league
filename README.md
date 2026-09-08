@@ -36,11 +36,26 @@ npm install      # first time — pulls Electron
 npm run widget   # launch the floating widget
 ```
 
-- **Compact by default** — status, score, predicted final + win-probability bar, top pick.
-- **Click ⤢ to expand** — adds possession, full stats, odds + line shopping, recommended
-  bets with reasoning, keeper saves projections, group table, and match events.
-- **Drag** by the title bar (position is remembered). Title-bar buttons: `≡` pick a match /
-  auto-track the live game · `⤢` expand · `📌` always-on-top · `—` hide to tray · `✕` quit.
+The shell is parlay-lab's "Broadcast" system (Barlow Condensed / JetBrains Mono, square
+corners, lower-third + crawl) re-skinned to Champions League navy — the "Starball Lab" look.
+
+- **Five tabs** in the 50px title bar: **Matchday** (hero for the tracked game, tonight's
+  card as ticket cards, the slate as kit-coloured game cards) · **Match** (lower third with
+  the headline numbers, a six-tile stat strip, the **pitch** — both XIs in formation with
+  live FotMob ratings and event badges, every shot plotted and sized by xG, and hover zones
+  on the corner flags, goalmouths, boxes, centre circle and benches that pull up corners
+  projections, keeper save lines, shots-in-box, momentum and the subs; click to pin — then
+  every section as a card: win-prob story, momentum, recommended bets, xG, stats, odds +
+  line shopping, public betting, keepers, corners, scorers, projections, events) · **Builder** (market board with verdict cells +
+  a slip rail with Model / Book / Edge boxes, EV, Kelly and correlation warnings) ·
+  **Table** (36-club league phase with zones, or the bracket once the phase ends) ·
+  **Record** (stat strip, bankroll, calibration, shadow fade, history tickets with CLV).
+- **Navigation** — `◀` / `Esc` / `Alt+←` walk back through views; `/` focuses the search box
+  (a club or a fixture opens that match). Tap any game card, table row or bracket tie to
+  follow it; the `↻ Auto-follow` toggle goes back to whichever game is live.
+- **Compact mode** (`⤢`, 300px wide) keeps the lower third, prediction and top picks for a
+  floating widget; the native caption buttons give Windows 11 Snap Layouts so several
+  widgets tile 2×2. `📌` toggles always-on-top; closing the window keeps the tray icon.
 - Auto-refreshes every 30s (backs off to 2 min at halftime); falls back to the next
   upcoming match when nothing is live. Picks show pre-match (market-based) and switch to
   the live run-of-play read after kickoff.

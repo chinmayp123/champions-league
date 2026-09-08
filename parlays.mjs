@@ -404,7 +404,8 @@ export async function parlayMenu(events = null) {
       })),
     });
   }
-  return { date: slate, games };
+  // the calibrations ride along so the builder's lower third can show what shrinks the claims
+  return { date: slate, games, goalsBias: cal.goalsBias, trust: cal.trust };
 }
 
 // grade an arbitrary set of builder-selected legs the same way buildParlay does (independence

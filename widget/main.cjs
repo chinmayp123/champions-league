@@ -18,8 +18,11 @@ function saveState(patch) {
 }
 let state = loadState();
 
-const COMPACT = { width: 290, height: 324 }; // two-row title bar (native caption overlay) + advance bar
-const EXPANDED = { width: 960, height: 940 };
+const COMPACT = { width: 300, height: 400 }; // two-row title bar (native caption overlay) + lower third + prediction
+const EXPANDED = { width: 1180, height: 920 };
+// the native caption overlay is as tall as the title bar's first row: 50px broadcast bar when
+// expanded, the 38px logo row when compact
+const overlayHeight = (expanded) => (expanded ? 50 : 38);
 // the expanded size to use — the user's saved drag-size if they've resized, else the default
 const expandedSize = () => ({ width: state.ew || EXPANDED.width, height: state.eh || EXPANDED.height });
 
@@ -39,6 +42,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: size.width,
     height: size.height,
+    icon: path.join(__dirname, process.platform === "win32" ? "icon.ico" : "icon.png"), // taskbar / Alt-Tab (Windows wants an .ico)
     minWidth: 260,
     minHeight: 220,
     x: state.x ?? undefined,
@@ -49,14 +53,17 @@ function createWindow() {
     // frameless window has no maximize button for the flyout to hang off. Transparent colour so
     // only the glyphs show over the glass bar; height matches .bar.
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#00000000", symbolColor: "#9aa7b6", height: 34 },
-    transparent: true,
+    titleBarOverlay: { color: "#00000000", symbolColor: "#8f9ac4", height: overlayHeight(state.expanded) },
+    // opaque: the Broadcast shell paints its own navy, and an opaque window is what lets Windows
+    // maximise it and hang the Snap Layouts flyout off the caption's maximise button
+    transparent: false,
     resizable: true,
+    maximizable: true,
     minimizable: true,  // native caption minimize; comes back from the taskbar or the tray
     alwaysOnTop: state.pinned,
     skipTaskbar: false,
     fullscreenable: false,
-    backgroundColor: "#00000000",
+    backgroundColor: "#070b1f",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -80,6 +87,7 @@ function createWindow() {
     if (!state.expanded) {
       if (w >= COMPACT.width + 120 || h >= COMPACT.height + 160) {
         saveState({ expanded: true, ew: w, eh: h });
+        try { win.setTitleBarOverlay({ height: overlayHeight(true) }); } catch {}
         win.webContents.send("config", { expanded: true, pinned: state.pinned, query: state.query });
       }
       return;
@@ -155,12 +163,10 @@ function showWidget() {
 }
 
 function buildTray() {
-  // a tiny generated icon so the widget has a tray presence (show/hide/quit)
-  const img = nativeImage.createFromDataURL(
-    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAALElEQVQ4y2NgGAWjYBSMglEwCkbBKBgFo2AUjIJRMApGwSgYBaNgFAwHAAAFRAABxV0p7QAAAABJRU5ErkJggg=="
-  );
+  // the starball, rasterised by widget/make-icon.mjs (tray@2x.png is picked up for HiDPI)
+  const img = nativeImage.createFromPath(path.join(__dirname, "tray.png"));
   tray = new Tray(img);
-  tray.setToolTip("Champions League widget");
+  tray.setToolTip("Starball Lab · Champions League");
   const menu = Menu.buildFromTemplate([
     { label: "Show / hide", click: () => { if (win?.isVisible()) win.hide(); else showWidget(); } },
     { label: "Refresh now", click: () => poll() },
@@ -176,6 +182,8 @@ function buildTray() {
   tray.on("click", () => { if (win?.isVisible()) win.hide(); else showWidget(); });
 }
 
+// one identity for the taskbar group, toasts and the desktop shortcut (otherwise it's "Electron")
+app.setAppUserModelId("starball-lab");
 app.whenReady().then(async () => {
   await loadLib();
   createWindow();
@@ -197,7 +205,10 @@ ipcMain.handle("toggle-expand", () => {
   const expanded = !state.expanded;
   saveState({ expanded });
   const size = expanded ? expandedSize() : COMPACT;
-  if (win) win.setSize(size.width, size.height, true); // stays resizable so the user can drag it
+  if (win) {
+    win.setSize(size.width, size.height, true); // stays resizable so the user can drag it
+    try { win.setTitleBarOverlay({ height: overlayHeight(expanded) }); } catch {}
+  }
   return expanded;
 });
 ipcMain.handle("toggle-pin", () => {

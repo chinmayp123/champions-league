@@ -74,6 +74,8 @@ export async function fetchFotmobMatch(pageUrl) {
     stats: content.stats,
     topPlayers: content.matchFacts?.topPlayers,
     teamForm: content.matchFacts?.teamForm,
+    lineup: content.lineup || null,               // formations + starters with pitch coordinates
+    attackingZones: content.attackingZones || null, // % of attacks down the left / centre / right
   };
   _matches.set(pageUrl, { at: now, data });
   return data;
@@ -301,4 +303,60 @@ export async function fotmobMatchday(home, away, dateIso) {
       String(f.utcTime || "").slice(0, 10) === day && sideMatch(f.home.name, home) && sideMatch(f.away.name, away));
     return fx?.round || null;
   } catch { return null; }
+}
+
+// ── pitch view: lineups + the shot map, oriented to ESPN's home/away ──────────────────────────
+// FotMob's lineup carries each starter's slot as a fraction of their OWN half (x: 0 own goal →
+// 1 halfway, y: 0 → 1 across) plus a live rating and events; the shot map has every shot in
+// 105×68 pitch units with both teams attacking x = 105. The widget draws home attacking right.
+const POS = { 0: "GK", 1: "DEF", 2: "MID", 3: "ATT" };
+function parseSide(t) {
+  if (!t) return null;
+  const player = (p, starter) => ({
+    id: p.id, name: p.name || "", short: p.lastName || p.name || "", num: p.shirtNumber || "",
+    pos: POS[p.usualPlayingPositionId] ?? "",
+    x: starter ? p.horizontalLayout?.x ?? null : null, y: starter ? p.horizontalLayout?.y ?? null : null,
+    rating: p.performance?.rating ?? null,
+    events: (p.performance?.events || []).map((e) => e.type).filter(Boolean),
+  });
+  return {
+    id: t.id, name: t.name, formation: t.formation || null, rating: t.rating ?? null, coach: t.coach?.name || null,
+    starters: (t.starters || []).map((p) => player(p, true)),
+    subs: (t.subs || []).map((p) => player(p, false)),
+    unavailable: (t.unavailable || []).map((p) => ({ name: p.name, reason: p.unavailability?.type || "", back: p.unavailability?.expectedReturn || "" })),
+  };
+}
+// { lineups: { type, home, away } | null, shots: [...], zones: { home, away } | null } — null on
+// any failure. Works pre-match too (confirmed lineups land about an hour before kickoff).
+export async function fotmobPitch(home, away, dateISO) {
+  try {
+    const fixtures = await fetchFotmobFixtures();
+    if (!fixtures?.length) return null;
+    const cand = fixtures.filter((f) =>
+      (sideMatch(f.home.name, home) && sideMatch(f.away.name, away)) ||
+      (sideMatch(f.home.name, away) && sideMatch(f.away.name, home)));
+    if (!cand.length) return null;
+    const day = dateISO ? new Date(dateISO).toISOString().slice(0, 10) : null;
+    const fx = (day && cand.find((f) => f.utcTime && f.utcTime.slice(0, 10) === day)) || cand[0];
+    const m = await fetchFotmobMatch(fx.pageUrl);
+    if (!m) return null;
+    const aligned = sideMatch(m.homeTeam.name, home);
+    const flip = (sd) => (aligned ? sd : sd === "home" ? "away" : "home");
+    const lu = m.lineup;
+    const sides = lu && (lu.homeTeam || lu.awayTeam) ? { home: parseSide(lu.homeTeam), away: parseSide(lu.awayTeam) } : null;
+    const lineups = sides ? { type: lu.lineupType || "standard", home: sides[flip("home")], away: sides[flip("away")] } : null;
+    const shots = (m.shots || []).map((s) => ({
+      id: s.id, side: flip(s.teamId === m.homeTeam.id ? "home" : "away"),
+      player: s.playerName || s.fullName || "", min: s.min ?? null, minAdded: s.minAdded ?? null,
+      x: Number(s.x) || 0, y: Number(s.y) || 0,
+      xg: Number(s.expectedGoals) || 0, xgot: s.expectedGoalsOnTarget != null ? Number(s.expectedGoalsOnTarget) : null,
+      type: s.eventType || "", onTarget: !!s.isOnTarget, blocked: !!s.isBlocked, ownGoal: !!s.isOwnGoal, inBox: !!s.isFromInsideBox,
+      situation: s.situation || "", shotType: s.shotType || "", period: s.period || "",
+    }));
+    const az = m.attackingZones;
+    const zones = az && az.home && az.away ? { home: az[flip("home")].total || null, away: az[flip("away")].total || null } : null;
+    return { lineups, shots, zones };
+  } catch {
+    return null;
+  }
 }

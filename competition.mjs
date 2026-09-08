@@ -75,3 +75,27 @@ export const COMP = pick();
 export const isPhaseSlug = (slug) => !slug || COMP.phaseSlugs.includes(slug);
 // plain-data subset the widget shows (title bar, round pills, standings hint)
 export const compMeta = () => ({ key: COMP.key, name: COMP.name, title: COMP.title, koShort: COMP.koShort, standingsHint: COMP.standingsHint, twoLegged: COMP.twoLegged });
+
+// domestic league of each club in this season's field — no feed the widget reads carries it, so
+// it's a season map matched on ESPN's display name (widest patterns last so "Inter" can't grab
+// anything else). Unknown club → null, and the UI just leaves the line out.
+const CLUB_LEAGUES = [
+  [/real madrid|barcelona|atl[eé]tico|villarreal|betis/i, "LaLiga"],
+  [/arsenal|liverpool|manchester|aston villa/i, "Premier League"],
+  [/bayern|dortmund|leipzig|stuttgart/i, "Bundesliga"],
+  [/internazionale|inter milan|napoli|roma|como/i, "Serie A"],
+  [/paris|lens|lille|marseille/i, "Ligue 1"],
+  [/porto|sporting|benfica/i, "Primeira Liga"],
+  [/psv|feyenoord|ajax/i, "Eredivisie"],
+  [/brugge|anderlecht/i, "Pro League"],
+  [/fenerbah|galatasaray/i, "Süper Lig"],
+  [/aek|olympiacos|panathinaikos/i, "Super League"],
+  [/bod[øo]|viking/i, "Eliteserien"],
+  [/slavia|sparta/i, "Czech Liga"],
+  [/slovan/i, "Niké liga"],
+  [/shakhtar|dynamo kyiv/i, "Ukrainian PL"],
+  [/lask|salzburg|sturm/i, "Austrian Bundesliga"],
+  [/sabah|qaraba/i, "Azerbaijan PL"],
+  [/celtic|rangers/i, "Scottish Prem"],
+];
+export const clubLeague = (name) => (CLUB_LEAGUES.find(([re]) => re.test(name || "")) || [])[1] || null;

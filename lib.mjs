@@ -6,10 +6,10 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday } from "./fotmob.mjs";
+import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday, fotmobPitch } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelProps } from "./fanduel.mjs";
-import { COMP, isPhaseSlug, compMeta } from "./competition.mjs";
+import { COMP, isPhaseSlug, compMeta, clubLeague } from "./competition.mjs";
 
 // every competition-specific id lives in competition.mjs — repoint the tool there, not here
 export const BASE = `https://site.api.espn.com/apis/site/v2/sports/soccer/${COMP.espn}`;
@@ -679,7 +679,7 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
     : new Date(ev.date).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
 
   const teamObj = (t) => ({
-    id: t.team.id, name: t.team.displayName, abbr: t.team.abbreviation,
+    id: t.team.id, name: t.team.displayName, abbr: t.team.abbreviation, league: clubLeague(t.team.displayName),
     score: state === "pre" ? null : Number(t.score) || 0,
     logo: t.team.logo || (t.team.logos && t.team.logos[0]?.href) || null,
     color: t.team.color ? `#${t.team.color}` : null,
@@ -841,7 +841,7 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
       if (t.includes("delay")) return false;
       return ["goal", "card", "substitution", "penalty", "kickoff", "halftime", "end"].some((k) => t.includes(k));
     })
-    .slice(-10)
+    // every event: the widget draws a full-match timeline from these
     .map((e) => ({
       min: e.clock?.displayValue || "",
       type: e.type?.text || "",
@@ -984,6 +984,7 @@ export async function listMatchesData(opts = {}) {
       away: away.team.displayName, awayAbbr: away.team.abbreviation, awayScore: Number(away.score) || 0,
       homeLogo: home.team.logo || null, awayLogo: away.team.logo || null,
       homeColor: home.team.color ? `#${home.team.color}` : null, awayColor: away.team.color ? `#${away.team.color}` : null,
+      homeLeague: clubLeague(home.team.displayName), awayLeague: clubLeague(away.team.displayName),
       live: state === "in", statusText: state === "in" ? (comp.status.displayClock || "LIVE") : state === "post" ? "FT" : null,
       pred,
     };
@@ -1308,6 +1309,9 @@ export async function getWidgetState(query) {
     const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions, gb);
     // league-phase matchday pill (knockout games carry a round tag instead)
     if (!view.round) view.matchday = await fotmobMatchday(homeRef, awayRef, ev.date);
+    // formations, per-player ratings and the shot map for the pitch card (pre-match too — the
+    // confirmed XIs land about an hour out); same cached FotMob page fetch as the xG above
+    view.pitch = await fotmobPitch(homeRef, awayRef, ev.date);
     // pre-match per-player projections (model est., display-only) from recent form — feeds both
     // the projected shots-on-target and predicted-scorer sections in the widget
     if (isPre) {
