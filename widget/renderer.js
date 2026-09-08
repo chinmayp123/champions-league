@@ -244,14 +244,20 @@ function sparkline(pts, { height = 40, cls = "", midline = null } = {}) {
 const spinner = (text) => h("div", { class: "center" }, [h("div", { class: "spinner" }), h("div", { class: "muted", text })]);
 
 // --- rendering ---
-const ROUND_SHORT = { "round-of-32": "R32", "round-of-16": "R16", quarterfinals: "QF", semifinals: "SF", "third-place": "3RD", final: "FINAL" };
+const ROUND_SHORT = { "knockout-round-playoffs": "PO", "round-of-32": "R32", "round-of-16": "R16", quarterfinals: "QF", semifinals: "SF", "third-place": "3RD", "3rd-place-match": "3RD", final: "FINAL" };
+// competition-specific labels ride along on every data push (lib's compMeta); fall back to the table above
+const roundShort = (slug) => ((last && last.comp && last.comp.koShort) || {})[slug] || ROUND_SHORT[slug];
+const compTitle = () => (last && last.comp && last.comp.title) || "Champions League 26/27";
 function render() {
   syncBar();
   // knockout theme: gold accents + a round pill in the title bar while a knockout game is tracked
   const ko = !!(last && last.match && last.match.round && last.match.round.knockout);
   app.classList.toggle("ko", ko);
-  roundEl.hidden = !ko;
-  if (ko) roundEl.textContent = ROUND_SHORT[last.match.round.slug] || last.match.round.label;
+  // league phase: the pill shows the matchday instead (FotMob's round number, via lib)
+  const md = !ko && last && last.match && last.match.matchday;
+  roundEl.hidden = !(ko || md);
+  if (md) roundEl.textContent = `MD ${md}`;
+  if (ko) roundEl.textContent = `${roundShort(last.match.round.slug) || last.match.round.label}${last.match.round.leg ? ` L${last.match.round.leg.n}` : ""}`;
   if (viewMode === "parlay") { body.replaceChildren(); body.appendChild(renderParlays(parlays)); return; }
   if (viewMode === "builder") { body.replaceChildren(); body.appendChild(renderBuilder(builder)); return; }
   if (viewMode === "record") { body.replaceChildren(); body.appendChild(renderRecord(record)); return; }
@@ -262,13 +268,14 @@ function render() {
   if (viewMode === "pick") { body.appendChild(renderPicker(last.matches || [])); return; }
 
   if (last.error) {
-    titleEl.textContent = "World Cup 2026";
+    titleEl.textContent = compTitle();
     body.appendChild(h("div", { class: "center muted", text: `Couldn’t load: ${last.error}` }));
     return;
   }
   if (!last.match) {
-    titleEl.textContent = "World Cup 2026";
-    body.appendChild(h("div", { class: "center muted", text: "No live match right now." }));
+    titleEl.textContent = compTitle();
+    body.appendChild(h("div", { class: "empty-ball" }));
+    body.appendChild(h("div", { class: "center muted", text: "No match live right now." }));
     const hint = h("div", { class: "center muted", text: "Tap ≡ to pick a game." });
     hint.style.fontSize = "11px"; hint.style.paddingTop = "0";
     body.appendChild(hint);
@@ -1239,15 +1246,19 @@ function renderStandings(data) {
   if (data.groupStageDone) return renderBracket(wrap, data);
 
   if (!data.groups || !data.groups.length) { wrap.appendChild(h("div", { class: "center muted", text: "No standings yet." })); return wrap; }
-  wrap.appendChild(h("div", { class: "muted pick-hint", text: "green = advancing · top 2 per group" }));
+  wrap.appendChild(h("div", { class: "muted pick-hint", text: (data.comp && data.comp.standingsHint) || "green = advancing" }));
   for (const g of data.groups) {
     wrap.appendChild(h("div", { class: "label", text: g.name }));
     const tbl = h("table", { class: "standtbl" });
     tbl.appendChild(h("tr", { class: "hd" }, [
-      h("td", { text: "" }), h("td", { class: "num", text: "P" }), h("td", { class: "num", text: "W-D-L" }),
+      h("td", { class: "rk", text: "#" }), h("td", { text: "" }), h("td", { class: "num", text: "P" }), h("td", { class: "num", text: "W-D-L" }),
       h("td", { class: "num", text: "GD" }), h("td", { class: "num", text: "Pts" }),
     ]));
-    for (const e of g.entries) tbl.appendChild(h("tr", { class: e.advanced ? "adv" : "" }, [
+    // row colour = qualification zone by rank (lib: e.zone — "adv" straight through, "po" play-off)
+    // with ESPN's own advanced flag as the fallback; a zone boundary gets a divider line
+    const bounds = new Set((g.entries || []).map((e, i, a) => (a[i + 1] && a[i + 1].zone !== e.zone ? e.rank : null)).filter(Boolean));
+    for (const e of g.entries) tbl.appendChild(h("tr", { class: `${e.zone || (e.advanced ? "adv" : "")}${bounds.has(e.rank) ? " zone-end" : ""}` }, [
+      h("td", { class: "rk", text: e.rank != null ? String(e.rank) : "" }),
       h("td", { class: "tm" }, [flagImg(e.abbr, e.logo), h("span", { class: "pk-team", text: e.abbr })].filter(Boolean)),
       h("td", { class: "num", text: String(e.played) }),
       h("td", { class: "num", text: `${e.w}-${e.d}-${e.l}` }),
@@ -1294,7 +1305,7 @@ function orderRounds(knockout) {
 // one compact two-line tie card for the bracket grid
 function brkCard(g, mine) {
   const done = g.state === "post", live = g.state === "in";
-  const sc = (n) => (g.state === "pre" ? "" : String(n));
+  const sc = (n) => (g.state === "pre" && !g.played ? "" : String(n));
   const row = (abbr, logo, score, win) => h("div", { class: `brk-t${done ? (win ? " win" : " out") : ""}` }, [
     flagImg(abbr, logo),
     h("span", { class: "bt-ab", text: abbr }),
@@ -1303,7 +1314,10 @@ function brkCard(g, mine) {
   const meta = [];
   if (live) meta.push(h("span", { class: "bt-live", text: g.statusText || "LIVE" }));
   else if (done) meta.push(h("span", { text: `FT${g.homeShoot != null || g.awayShoot != null ? ` · ${g.homeShoot ?? 0}–${g.awayShoot ?? 0} p` : ""}` }));
+  else if (g.played && g.nextLeg) meta.push(h("span", { text: `2nd leg ${new Date(g.nextLeg).toLocaleDateString([], { month: "short", day: "numeric" })}` }));
   else meta.push(h("span", { text: new Date(g.date).toLocaleDateString([], { month: "short", day: "numeric" }) }));
+  // two-legged tie: the big number is the aggregate; the legs themselves ride in the meta line
+  if (g.legScores && g.legScores.some(Boolean)) meta.push(h("span", { class: "bt-legs", text: `agg · ${g.legScores.filter(Boolean).join(" · ")}` }));
   if (g.state === "pre" && g.pred) {
     // same shorthand the model uses: half the draws break the favourite's way
     const advH = g.pred.wH + g.pred.wD * 0.5;
@@ -1319,7 +1333,7 @@ function brkCard(g, mine) {
 function renderBracket(wrap, data) {
   titleEl.textContent = "Bracket";
   if (!data.knockout || !data.knockout.length) {
-    wrap.appendChild(h("div", { class: "center muted", text: "Group stage done — knockout fixtures not posted yet." }));
+    wrap.appendChild(h("div", { class: "center muted", text: "Knockout fixtures not posted yet." }));
     return wrap;
   }
   // "my path": ties involving the currently tracked match's teams get the gold treatment
@@ -1360,7 +1374,7 @@ function renderBracket(wrap, data) {
       let p = p0;
       const parts = [];
       for (let i = idx + 1; i < treeCols.length; i++) {
-        parts.push(`${ROUND_SHORT[treeCols[i].slug] || treeCols[i].label} ${Math.round(p * 100)}%`);
+        parts.push(`${roundShort(treeCols[i].slug) || treeCols[i].label} ${Math.round(p * 100)}%`);
         p *= 0.5;
       }
       parts.push(`🏆 ${Math.round(p * 100)}%`);

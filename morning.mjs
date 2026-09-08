@@ -10,9 +10,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { generateDailyParlays, formatParlays } from "./parlays.mjs";
 import { recordDay, settle, stats } from "./betlog.mjs";
+import { COMP } from "./competition.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT_FILE = join(HERE, "bets", "latest.txt");
+const OUT_FILE = join(COMP.betlogDir, "latest.txt");
 const pct = (p) => (p == null ? "-" : `${Math.round(p * 100)}%`);
 
 function statsBlock() {

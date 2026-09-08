@@ -9,9 +9,12 @@ import { summary, statMap, ml2prob, poissonCdf } from "./lib.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelBTTS } from "./fanduel.mjs";
 import { oddspapiBTTS, oddspapiSides } from "./oddspapi.mjs";
+import { COMP } from "./competition.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const LOG_DIR = join(HERE, "bets");
+// per-competition log dir so a new tournament starts a clean record (its calibrations must not
+// inherit another competition's biases) while the old one stays on disk
+const LOG_DIR = COMP.betlogDir;
 const LOG_FILE = join(LOG_DIR, "log.json");
 
 function read() {

@@ -17,6 +17,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { COMP } from "./competition.mjs";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
 // FanDuel's public web-app key — a constant baked into their frontend bundle, not a secret.
@@ -34,7 +35,10 @@ const BASE = `https://sbapi.${REGION}.sportsbook.fanduel.com/api`;
 // (e.g. sportsbook.fanduel.com/navigation/soccer/fifa-world-cup -> "fifa-world-cup") into
 // odds.config.json as "fanduelWorldCupPageId". Without it we can still read LIVE matches via
 // /in-play, just not upcoming ones — set it to cover pre-match corner lines.
-const WC_PAGE = process.env.FANDUEL_WC_PAGE || cfg().fanduelWorldCupPageId || null;
+const WC_PAGE = process.env.FANDUEL_WC_PAGE || cfg().fanduelWorldCupPageId || COMP.fanduel.customPageId || null;
+// competitions without a custom page (e.g. the Champions League) are listed on the soccer SPORT
+// page (eventTypeId 1) alongside every other league — filter that by FanDuel's competitionId
+const COMP_ID = COMP.fanduel.competitionId || null;
 const H = { "User-Agent": UA, "Accept": "application/json", "Referer": "https://sportsbook.fanduel.com/" };
 
 const norm = (s) => (s || "").toLowerCase().replace(/\b(and|the|fc|afc)\b/g, "").replace(/[^a-z]/g, "");
@@ -52,6 +56,7 @@ async function fetchSoccerEvents() {
   const urls = [
     `${BASE}/in-play?_ak=${AK}&timezone=America/New_York`,
     WC_PAGE ? `${BASE}/content-managed-page?page=CUSTOM&customPageId=${encodeURIComponent(WC_PAGE)}&_ak=${AK}&timezone=America/New_York` : null,
+    COMP_ID ? `${BASE}/content-managed-page?page=SPORT&eventTypeId=1&_ak=${AK}&timezone=America/New_York` : null,
   ].filter(Boolean);
   const byId = new Map();
   for (const u of urls) {
@@ -59,7 +64,12 @@ async function fetchSoccerEvents() {
       const r = await fetch(u, { headers: H });
       if (!r.ok) continue;
       const j = await r.json();
-      for (const ev of Object.values(j.attachments?.events || {})) if (ev?.eventId) byId.set(ev.eventId, ev);
+      const sportPage = u.includes("page=SPORT");
+      for (const ev of Object.values(j.attachments?.events || {})) {
+        if (!ev?.eventId) continue;
+        if (sportPage && COMP_ID && ev.competitionId !== COMP_ID) continue; // other leagues on the soccer page
+        byId.set(ev.eventId, ev);
+      }
     } catch { /* skip this source */ }
   }
   _cache = { at: now, events: [...byId.values()] };

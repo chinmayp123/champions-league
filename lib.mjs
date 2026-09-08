@@ -6,12 +6,15 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT } from "./fotmob.mjs";
+import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelProps } from "./fanduel.mjs";
+import { COMP, isPhaseSlug, compMeta } from "./competition.mjs";
 
-export const BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
-const SPORT_BASE = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup";
+// every competition-specific id lives in competition.mjs — repoint the tool there, not here
+export const BASE = `https://site.api.espn.com/apis/site/v2/sports/soccer/${COMP.espn}`;
+const STANDINGS_URL = `https://site.api.espn.com/apis/v2/sports/soccer/${COMP.espn}/standings`;
+const SPORT_BASE = `https://api.the-odds-api.com/v4/sports/${COMP.oddsApiSport}`;
 const ODDS_BASE = `${SPORT_BASE}/odds`;
 
 // Optional live-odds key (The Odds API). Read from env or a gitignored config file next to
@@ -36,9 +39,11 @@ export async function getJSON(url) {
 
 export const scoreboard = () => getJSON(`${BASE}/scoreboard`);
 export const scoreboardOn = (yyyymmdd) => getJSON(`${BASE}/scoreboard?dates=${yyyymmdd}`);
+// one call for a whole date span (ESPN accepts YYYYMMDD-YYYYMMDD) — cheaper than a fetch per day
+// when the picker window spans weeks between matchdays
+export const scoreboardRange = (from, to) => getJSON(`${BASE}/scoreboard?dates=${from}-${to}&limit=300`);
 export const summary = (id) => getJSON(`${BASE}/summary?event=${id}`);
-export const allStandings = () =>
-  getJSON(`https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings`);
+export const allStandings = () => getJSON(STANDINGS_URL);
 
 // YYYYMMDD for `daysAhead` days from today
 export function ymd(daysAhead = 0) {
@@ -857,18 +862,22 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
   const topPlayers = realXG?.topPlayers || null;
   const form = realXG?.form || null;
 
-  // knockout round tag (season.slug is "group-stage" during groups, round slug afterwards)
+  // knockout round tag (season.slug is the phase slug — "league-phase" / "group-stage" — until the
+  // knockouts, then the round slug). Two-legged ties carry ESPN's leg marker.
   const slug = ev.season?.slug || "";
-  const round = slug && slug !== "group-stage"
-    ? { slug, label: KO_LABEL[slug] || slug.replace(/-/g, " "), knockout: true }
+  const leg = comp.leg?.value ? { n: Number(comp.leg.value), label: comp.leg.displayValue || `Leg ${comp.leg.value}` } : null;
+  const round = !isPhaseSlug(slug)
+    ? { slug, label: `${KO_LABEL[slug] || slug.replace(/-/g, " ")}${leg ? ` · ${leg.label}` : ""}`, knockout: true, leg }
     : null;
 
   // advance probability (knockout, unfinished only): a 90-minute draw doesn't eliminate anyone —
   // it goes to extra time/pens — so fold wD into each side. The draw is split by relative
   // strength, but shrunk hard toward a coin flip (x0.4) because ET/pens are far closer to
   // 50/50 than regulation: legs tire, pens are near-random, favourites lose most of their edge.
+  // Two-legged ties: a single leg decides nothing (the 2nd leg would need the aggregate), so the
+  // advance bar only shows on one-off ties (WC knockouts, the UCL final).
   let advance = null;
-  if (round && prediction && state !== "post") {
+  if (round && !leg && prediction && state !== "post") {
     const strength = prediction.wH + prediction.wA > 0 ? prediction.wH / (prediction.wH + prediction.wA) : 0.5;
     const etH = 0.5 + (strength - 0.5) * 0.4;
     advance = { home: prediction.wH + prediction.wD * etH, away: prediction.wA + prediction.wD * (1 - etH) };
@@ -939,16 +948,19 @@ function espnMarketPrediction(ev) {
 }
 
 // today's matches (today + N days) as lightweight rows for a picker
-export async function listMatchesData({ back = 2, ahead = 2 } = {}) {
-  // span previous days too (back) so finished games stay viewable, plus today + upcoming (ahead)
-  const offsets = [];
-  for (let i = -back; i <= ahead; i++) offsets.push(i);
-  const boards = await Promise.all(offsets.map((i) => scoreboardOn(ymd(i)).catch(() => ({ events: [] }))));
+// the widget's fixture pool: recent days (so finished games stay viewable) through the next
+// matchweeks. Window sizes are per competition — a club competition plays Tue–Thu every 2–3
+// weeks, so it looks weeks ahead where the WC looked days. One ranged ESPN call, de-duped.
+export async function fixturePool({ back = COMP.lookBackDays, ahead = COMP.lookAheadDays } = {}) {
+  const board = await scoreboardRange(ymd(-back), ymd(ahead)).catch(() => ({ events: [] }));
   const seen = new Set(), events = [];
-  for (const b of boards)
-    for (const ev of b.events || [])
-      if (!seen.has(ev.id)) { seen.add(ev.id); events.push(ev); }
+  for (const ev of board.events || []) if (!seen.has(ev.id)) { seen.add(ev.id); events.push(ev); }
   events.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return events;
+}
+
+export async function listMatchesData(opts = {}) {
+  const events = await fixturePool(opts);
   // one cached odds fetch covers every row's predicted scoreline
   let oddsEvents = null;
   if (ODDS_KEY) { try { oddsEvents = await fetchOddsEvents(); } catch { /* no predictions */ } }
@@ -1018,7 +1030,7 @@ function mapFanduelProps(fd) {
 
 // pregame projections are only computed before kickoff; snapshot them to disk so we can show
 // them again (to compare against the live/final stats) once the game has started. Keyed by event.
-const PREGAME_FILE = join(dirname(fileURLToPath(import.meta.url)), "bets", "pregame.json");
+const PREGAME_FILE = join(COMP.betlogDir, "pregame.json");
 function loadPregameStore() { try { return JSON.parse(readFileSync(PREGAME_FILE, "utf8")); } catch { return {}; } }
 function savePregame(id, proj) {
   try {
@@ -1112,31 +1124,70 @@ export async function captureClosing() {
   }
 }
 
-// knockout rounds in bracket order (ESPN season.slug)
-// ESPN's live slug for the bronze game is "3rd-place-match" — keep "third-place" too in case it varies
-const KO_ORDER = ["round-of-32", "round-of-16", "quarterfinals", "semifinals", "third-place", "3rd-place-match", "final"];
-const KO_LABEL = { "round-of-32": "Round of 32", "round-of-16": "Round of 16", quarterfinals: "Quarter-finals", semifinals: "Semi-finals", "third-place": "Third place", "3rd-place-match": "Third place", final: "Final" };
+// knockout rounds in bracket order (ESPN season.slug) — per competition
+const KO_ORDER = COMP.koOrder;
+const KO_LABEL = COMP.koLabel;
 
-// scan fixtures for knockout games (season.slug != group-stage), grouped by round. The whole
-// knockout window is fixed (Jun 28 – Jul 19, 2026), so scan all of it — a rolling window
-// anchored on today drops the early rounds off the bracket as the tournament progresses.
-async function scanKnockout() {
-  const dates = [];
-  for (let t = Date.UTC(2026, 5, 27); t <= Date.UTC(2026, 6, 20); t += 864e5) {
-    const d = new Date(t);
-    dates.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`);
+// two-legged ties: fold both legs of a pairing into ONE bracket entry — aggregate score, winner
+// from the decisive leg — so the bracket shows ties, not games. Oriented as the 1st leg's
+// home/away. Single-leg games in the round (the final) pass through untouched.
+function foldLegs(games) {
+  games.sort((x, y) => new Date(x.date) - new Date(y.date));
+  const ties = [], byPair = new Map();
+  for (const g of games) {
+    if (!g.leg) { ties.push(g); continue; }
+    const key = [g.homeAbbr, g.awayAbbr].sort().join("|");
+    let t = byPair.get(key);
+    if (!t) { t = { legs: [] }; byPair.set(key, t); ties.push(t); }
+    t.legs.push(g);
   }
-  const boards = await Promise.all(dates.map((ds) => scoreboardOn(ds).catch(() => ({ events: [] }))));
+  for (const t of ties) {
+    if (!t.legs) continue;
+    const [l1, l2] = t.legs;
+    // leg-2 sides are swapped relative to leg 1, so leg-2 away goals belong to the leg-1 home side
+    const hAgg = l1.homeScore + (l2 ? l2.awayScore : 0), aAgg = l1.awayScore + (l2 ? l2.homeScore : 0);
+    const done = !!l2 && l2.state === "post", live = t.legs.some((l) => l.state === "in");
+    const played = t.legs.some((l) => l.state === "post");
+    let homeWin = false, awayWin = false;
+    if (done) {
+      if (hAgg > aAgg) homeWin = true; else if (aAgg > hAgg) awayWin = true;
+      else { homeWin = l2.awayWin; awayWin = l2.homeWin; } // level on aggregate: ET/pens in leg 2
+    }
+    // click target: the live leg, else the most recent leg that has started, else the 1st leg
+    const focus = t.legs.find((l) => l.state === "in") || [...t.legs].reverse().find((l) => l.state !== "pre") || l1;
+    Object.assign(t, {
+      id: focus.id, date: l1.date, leg: null,
+      homeAbbr: l1.homeAbbr, awayAbbr: l1.awayAbbr, homeLogo: l1.homeLogo, awayLogo: l1.awayLogo,
+      homeScore: hAgg, awayScore: aAgg, played,
+      homeShoot: done && l2.awayShoot != null ? l2.awayShoot : null,
+      awayShoot: done && l2.homeShoot != null ? l2.homeShoot : null,
+      homeWin, awayWin,
+      state: done ? "post" : live ? "in" : "pre",
+      statusText: live ? (t.legs.find((l) => l.state === "in").statusText || "LIVE") : done ? "FT" : null,
+      legScores: t.legs.map((l) => (l.state === "pre" ? null : `${l.homeScore}–${l.awayScore}`)),
+      nextLeg: !done && l2 && l1.state === "post" ? l2.date : null,
+      pred: !played ? l1.pred : null,
+    });
+  }
+  return ties;
+}
+
+// scan fixtures for knockout games (season.slug not a phase slug), grouped by round. The whole
+// knockout window is scanned in one ranged call — a rolling window anchored on today drops the
+// early rounds off the bracket as the tournament progresses.
+async function scanKnockout() {
+  const [from, to] = COMP.knockoutWindow;
+  const board = await scoreboardRange(from, to).catch(() => ({ events: [] }));
   const seen = new Set(), byRound = new Map();
-  for (const b of boards) for (const ev of b.events || []) {
+  for (const ev of board.events || []) {
     const slug = ev.season?.slug || "";
-    if (!slug || slug === "group-stage" || seen.has(ev.id)) continue;
+    if (isPhaseSlug(slug) || seen.has(ev.id)) continue;
     seen.add(ev.id);
     const c = ev.competitions[0];
     const home = c.competitors.find((t) => t.homeAway === "home"), away = c.competitors.find((t) => t.homeAway === "away");
     const st = c.status.type.state;
     (byRound.get(slug) || byRound.set(slug, []).get(slug)).push({
-      id: ev.id, date: ev.date,
+      id: ev.id, date: ev.date, leg: c.leg?.value ? Number(c.leg.value) : null,
       homeAbbr: home.team.abbreviation, awayAbbr: away.team.abbreviation, homeLogo: home.team.logo, awayLogo: away.team.logo,
       homeScore: Number(home.score) || 0, awayScore: Number(away.score) || 0,
       // shootout scores + explicit winner flags. With pens the 90' scores stay level, so the
@@ -1151,7 +1202,10 @@ async function scanKnockout() {
   }
   return [...byRound.entries()]
     .sort((a, b) => KO_ORDER.indexOf(a[0]) - KO_ORDER.indexOf(b[0]))
-    .map(([slug, games]) => ({ slug, label: KO_LABEL[slug] || slug, games: games.sort((x, y) => new Date(x.date) - new Date(y.date)) }));
+    .map(([slug, games]) => ({
+      slug, label: KO_LABEL[slug] || slug,
+      games: COMP.twoLegged ? foldLegs(games) : games.sort((x, y) => new Date(x.date) - new Date(y.date)),
+    }));
 }
 
 // group standings (all 12 groups) + a knockout bracket once the group stage finishes. Cached.
@@ -1161,7 +1215,7 @@ export async function getStandings() {
   const now = Date.now();
   if (standingsCache.data && now - standingsCache.at < STANDINGS_TTL) return standingsCache.data;
   try {
-    const j = await getJSON("https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings");
+    const j = await getJSON(STANDINGS_URL);
     const num = (st, k) => (st[k] ? (st[k].value ?? parseFloat(st[k].displayValue)) : null);
     const groups = (j.children || []).map((g) => {
       const entries = (g.standings?.entries || []).map((e) => {
@@ -1173,12 +1227,14 @@ export async function getStandings() {
           gd: st.pointDifferential?.displayValue ?? String(num(st, "pointDifferential") ?? "0"),
           pts: num(st, "points") || 0, advanced: num(st, "advanced") === 1,
         };
-      }).sort((a, b) => (a.rank || 9) - (b.rank || 9));
+      }).sort((a, b) => (a.rank || 99) - (b.rank || 99));
+      // qualification zone by rank (e.g. UCL: 1–8 straight through, 9–24 play-off) for row colouring
+      for (const e of entries) e.zone = (COMP.zones.find((z) => e.rank != null && e.rank <= z.upTo) || {}).cls || null;
       return { name: g.name || g.abbreviation || "Group", entries };
     });
-    const groupStageDone = groups.length > 0 && groups.every((g) => g.entries.length && g.entries.every((e) => e.played >= 3));
+    const groupStageDone = groups.length > 0 && groups.every((g) => g.entries.length && g.entries.every((e) => e.played >= COMP.phaseGames));
     const knockout = await scanKnockout().catch(() => []);
-    const data = { groups, groupStageDone, knockout };
+    const data = { groups, groupStageDone, knockout, comp: compMeta() };
     standingsCache = { at: now, data };
     return data;
   } catch (e) {
@@ -1193,13 +1249,12 @@ export async function getWidgetState(query) {
     // pull previous days + today + the next 2 (merged, de-duped) so BOTH past (finished) and
     // future games from the picker resolve — not just today's. Previously this used today-only
     // scoreboard(), so clicking a past or future game found nothing and showed a blank view.
-    const boards = await Promise.all([-2, -1, 0, 1, 2].map((i) => scoreboardOn(ymd(i)).catch(() => ({ events: [] }))));
-    const seen = new Set(), events = [];
-    for (const b of boards) for (const e of b.events || []) if (!seen.has(e.id)) { seen.add(e.id); events.push(e); }
+    const events = await fixturePool();
     let ev = null;
-    if (query) {
-      ev = findEvent(events, query);
-    } else {
+    // a stale saved query (a match from a past window/competition) must not blank the widget —
+    // fall through to the auto pick when it matches nothing
+    if (query) ev = findEvent(events, query);
+    if (!ev) {
       // auto: prefer a live game; otherwise fall back to the soonest upcoming one so the
       // widget always shows something useful
       const live = events.filter((e) => e.competitions[0].status.type.state === "in");
@@ -1212,7 +1267,7 @@ export async function getWidgetState(query) {
       }
     }
     const matches = await listMatchesData().catch(() => []);
-    if (!ev) return { match: null, matches };
+    if (!ev) return { match: null, matches, comp: compMeta() };
 
     const sum = await summary(ev.id);
     let liveOdds = null;
@@ -1251,6 +1306,8 @@ export async function getWidgetState(query) {
     // imports from this module, so a static import would create a load-time cycle.
     const gb = await import("./betlog.mjs").then((b) => b.goalsBias().factor).catch(() => 1);
     const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions, gb);
+    // league-phase matchday pill (knockout games carry a round tag instead)
+    if (!view.round) view.matchday = await fotmobMatchday(homeRef, awayRef, ev.date);
     // pre-match per-player projections (model est., display-only) from recent form — feeds both
     // the projected shots-on-target and predicted-scorer sections in the widget
     if (isPre) {
@@ -1273,8 +1330,8 @@ export async function getWidgetState(query) {
     view.playerProps = props;
     // FanDuel anytime-goalscorer prices [{ player, ml, implied }] for the predicted-scorer compare
     if (fd && fd.scorers?.length) view.fdScorers = fd.scorers;
-    return { match: view, matches };
+    return { match: view, matches, comp: compMeta() };
   } catch (e) {
-    return { error: String(e?.message || e), matches: [] };
+    return { error: String(e?.message || e), matches: [], comp: compMeta() };
   }
 }

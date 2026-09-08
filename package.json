@@ -1,7 +1,7 @@
 {
   "name": "worldcup-tracker",
   "version": "1.0.0",
-  "description": "Live FIFA World Cup 2026 match tracker for the terminal",
+  "description": "Live soccer match tracker + betting harness (Champions League 2026-27; built for the 2026 World Cup)",
   "type": "module",
   "bin": {
     "worldcup": "./worldcup.mjs"

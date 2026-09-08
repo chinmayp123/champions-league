@@ -9,7 +9,8 @@
 // returns null and callers fall back to their proxy. Never throws to callers.
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
-const WC_LEAGUE = 77;                  // FotMob league id for the FIFA World Cup
+import { COMP } from "./competition.mjs";
+const WC_LEAGUE = COMP.fotmob.leagueId;   // FotMob league id for the active competition
 const FIXTURES_TTL = 10 * 60 * 1000;   // fixture list changes rarely
 const MATCH_TTL = 45 * 1000;           // a live match's data updates as it plays
 
@@ -39,11 +40,12 @@ let _fixtures = { at: 0, data: null };
 export async function fetchFotmobFixtures() {
   const now = Date.now();
   if (_fixtures.data && now - _fixtures.at < FIXTURES_TTL) return _fixtures.data;
-  const pp = nextData(await getHtml(`https://www.fotmob.com/leagues/${WC_LEAGUE}/matches/world-cup`));
+  const pp = nextData(await getHtml(`https://www.fotmob.com/leagues/${WC_LEAGUE}/matches/${COMP.fotmob.slug}`));
   const all = pp?.fixtures?.allMatches || [];
   const data = all.map((m) => ({
     id: String(m.id),
     pageUrl: m.pageUrl,
+    round: m.round != null ? Number(m.round) || null : null, // league-phase matchday (1–8)
     home: { id: m.home?.id, name: m.home?.name },
     away: { id: m.away?.id, name: m.away?.name },
     utcTime: m.status?.utcTime || null,
@@ -288,4 +290,15 @@ export async function fotmobXG(home, away, dateISO) {
   } catch {
     return null;
   }
+}
+
+// league-phase matchday for an ESPN match (home/away { name, abbr }, ISO date): FotMob's round
+// number for the fixture on the same day. null if unmatched — the pill just stays hidden.
+export async function fotmobMatchday(home, away, dateIso) {
+  try {
+    const day = String(dateIso || "").slice(0, 10);
+    const fx = (await fetchFotmobFixtures()).find((f) =>
+      String(f.utcTime || "").slice(0, 10) === day && sideMatch(f.home.name, home) && sideMatch(f.away.name, away));
+    return fx?.round || null;
+  } catch { return null; }
 }

@@ -9,9 +9,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { COMP } from "./competition.mjs";
 
 const API = "https://api.oddspapi.io/v4";
-const SOCCER = 10, WC = 16;
+const SOCCER = 10, WC = COMP.oddspapiTournamentId; // "WC" = the active competition's tournamentId
 const H = { Accept: "application/json", "User-Agent": "worldcup-tracker" };
 
 function cfg() {

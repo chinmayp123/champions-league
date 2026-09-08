@@ -95,3 +95,17 @@ size to actually fit and validate it.
 `worldcup-tracker` is **archived as-is** — a complete, honest record of a betting harness that worked
 and a prediction engine that didn't. The value is the harness and the lessons, both of which live on
 in `gridiron`. No further model work happens here; the World Cup is over.
+
+---
+
+## 6. Addendum (2026-09-08): repointed at the Champions League
+
+Un-archived in practice: the harness now runs the **2026-27 UEFA Champions League** (league phase
+kicked off 2026-09-08). Everything competition-specific moved into `competition.mjs`; the UCL bet
+log is a fresh `bets/ucl-2026-27/` so WC calibrations don't carry over. Two-legged ties fold into one
+bracket entry (aggregate + leg scores), the standings table shows the 36-team league phase with
+qualification zones, and the picker looks three weeks ahead because matchweeks are sparse.
+
+The engine is **unchanged** for now (still `market + form tilt`, still edgeTrust-floored), so treat
+the tracked card as paper until CLV says otherwise. Next: Track B's Dixon-Coles engine fed by
+domestic-league xG, which club football finally makes fittable.

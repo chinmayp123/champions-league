@@ -1,5 +1,12 @@
 # worldcup-tracker
 
+> **Now pointed at the 2026-27 UEFA Champions League.** The tool was built for the 2026 World Cup;
+> since September 2026 it runs the Champions League instead. Every competition-specific id (ESPN,
+> The Odds API, OddsPapi, FotMob, FanDuel) and the format rules (league phase, two-legged ties,
+> knockout window, bet-log folder) live in `competition.mjs`. Switch back with
+> `"competition": "wc"` in `odds.config.json` (or `COMPETITION=wc`). Each competition keeps its
+> own bet log under `bets/`, so calibrations never bleed across tournaments.
+
 Live FIFA World Cup 2026 match tracker for your terminal. Zero dependencies — just Node 18+ (uses ESPN's public API, no key required).
 
 ```

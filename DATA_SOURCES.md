@@ -24,6 +24,9 @@ current free stack provides.
   `runners[].handicap`. Unofficial → best-effort, returns null on any miss. Two optional keys
   in `odds.config.json`:
   - `fanduelRegion` — your state subdomain (`nj`, `pa`, `co`, …). Default `nj`.
+  - **Champions League (current):** no custom page is needed — UCL events come off the soccer
+    SPORT page (`content-managed-page?page=SPORT&eventTypeId=1`) filtered by FanDuel's
+    `competitionId` 228 (set in `competition.mjs`).
   - `fanduelWorldCupPageId` — slug from the sportsbook URL
     (`…/navigation/soccer/<slug>`), e.g. `fifa-world-cup`. Without it, corners resolve only
     for **live** matches (via `/in-play`); with it, upcoming matches work too.

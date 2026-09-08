@@ -1,10 +1,14 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
-  --bg: rgba(17, 21, 28, 0.92);
-  --line: rgba(255,255,255,0.10);
-  --txt: #eef1f5;
-  --muted: #9aa7b6;       /* lifted for readability on the dark glass bg */
-  --accent: #7aa2ff;   /* home */
+  /* Champions League night: midnight navy glass, electric-blue accent, silver starball */
+  --bg: rgba(7, 12, 36, 0.93);
+  --line: rgba(130, 160, 240, 0.14);
+  --txt: #eef2ff;
+  --muted: #9fb1d9;       /* bluish grey, still readable on the navy glass */
+  --accent: #4f8dff;   /* home */
+  --star: #dfe9ff;     /* starball silver */
+  --wm: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22 opacity=%220.055%22%3E%3Cdefs%3E%3Cpath id=%22st%22 d=%22M0.00,-10.00 L2.47,-3.40 L9.51,-3.09 L3.99,1.30 L5.88,8.09 L0.00,4.20 L-5.88,8.09 L-3.99,1.30 L-9.51,-3.09 L-2.47,-3.40 Z%22/%3E%3CclipPath id=%22cp%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22/%3E%3C/clipPath%3E%3C/defs%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%223%22/%3E%3Cg clip-path=%22url(%23cp)%22 fill=%22%23ffffff%22%3E%3Cuse href=%22%23st%22 transform=%22translate(50 50) scale(1.6)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 23.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 77.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 7.6) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(99.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(1.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 7.6) scale(1.1)%22/%3E%3C/g%3E%3C/svg%3E");        /* starball watermark, faint (data-URI SVG) */
+  --wm-solid: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22 opacity=%221%22%3E%3Cdefs%3E%3Cpath id=%22st%22 d=%22M0.00,-10.00 L2.47,-3.40 L9.51,-3.09 L3.99,1.30 L5.88,8.09 L0.00,4.20 L-5.88,8.09 L-3.99,1.30 L-9.51,-3.09 L-2.47,-3.40 Z%22/%3E%3CclipPath id=%22cp%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22/%3E%3C/clipPath%3E%3C/defs%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%223%22/%3E%3Cg clip-path=%22url(%23cp)%22 fill=%22%23ffffff%22%3E%3Cuse href=%22%23st%22 transform=%22translate(50 50) scale(1.6)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 23.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 77.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 7.6) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(99.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(1.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 7.6) scale(1.1)%22/%3E%3C/g%3E%3C/svg%3E");  /* same, full strength (element sets opacity) */
   --opp: #ff8fb3;      /* away */
   --home: #7aa2ff;     /* per-match team colours, overridden from ESPN kit colours in JS */
   --away: #ff8fb3;
@@ -24,7 +28,7 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--wm) no-repeat right -78px bottom -78px / 270px, var(--bg);
   backdrop-filter: blur(18px);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -37,10 +41,18 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 7px 10px; font-size: 11px; color: var(--muted);
   border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  /* Windows Controls Overlay (native min/max/close so Snap Layouts works): our controls stop
+     where the overlay begins — env() only resolves while the overlay is active */
+  padding-right: calc(100% - env(titlebar-area-width, 100%) - env(titlebar-area-x, 0px) + 10px);
 }
 .brand { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.brand .logo { flex: 0 0 auto; display: block; }
-.bar .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* compact: the native caption buttons eat ~100px of a 290px bar, so the toolbar drops to a
+   second row instead of crushing the title + round pill */
+.compact .bar { flex-wrap: wrap; row-gap: 3px; padding-bottom: 5px; }
+.compact .bar .controls { margin-left: auto; }
+.compact .bar .brand { flex: 1 1 100%; }
+.brand .logo { flex: 0 0 auto; display: block; color: var(--star); filter: drop-shadow(0 0 3px rgba(223,233,255,.35)); }
+.bar .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; letter-spacing: .04em; color: #c9d5f3; }
 .controls { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 1px; }
 .controls button {
   -webkit-app-region: no-drag;
@@ -216,6 +228,10 @@ td.lead { font-weight: 700; color: #fff; }
 .standtbl td.num { text-align: right; color: #c7ced8; font-variant-numeric: tabular-nums; }
 .standtbl td.pts { font-weight: 800; color: #fff; }
 .standtbl tr.adv td.tm .pk-team { color: var(--green); }
+.standtbl tr.po td.tm .pk-team { color: #f0c46a; }            /* play-off zone (UCL 9–24) */
+.standtbl td.rk { color: var(--muted); font-size: 10px; text-align: right; padding-right: 6px; width: 20px; font-variant-numeric: tabular-nums; }
+.standtbl tr.zone-end td { border-bottom: 1px dashed rgba(255,255,255,.16); }
+.bt-legs { opacity: .75; }
 /* bracket grid — one column per round, braces join feeder pairs to their next-round tie */
 .brk-path { font-size: 10.5px; margin: -2px 0 8px; }
 .brk-path { color: color-mix(in srgb, var(--gold, #e8c35a) 40%, var(--muted)); }
@@ -392,7 +408,11 @@ td.lead { font-weight: 700; color: #fff; }
 /* small inline explainer under a section label */
 .hint { font-size: 10.5px; color: var(--muted); margin: -2px 0 5px; line-height: 1.35; }
 
-/* ── gold run: knockout-round theme + match header polish ─────────────── */
+/* empty state — a faint starball above the copy */
+.empty-ball { width: 78px; height: 78px; margin: 26px auto 4px; opacity: .22; background: var(--wm-solid) center / contain no-repeat; }
+.empty-ball + .center { padding-top: 0; }
+
+/* ── starlight run: knockout-round theme + match header polish ─────────── */
 
 /* hero — kit-colour ambient glow behind the match header */
 .hero {
@@ -446,6 +466,11 @@ td.lead { font-weight: 700; color: #fff; }
   background: color-mix(in srgb, var(--gold, #e8c35a) 10%, transparent);
   padding: 1px 6px; border-radius: 5px;
 }
+#app:not(.ko) .round-pill {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 
 /* bracket view upgrades */
 .label.brk-round {
@@ -459,20 +484,22 @@ td.lead { font-weight: 700; color: #fff; }
   background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent);
 }
 
-/* knockout theme root — championship gold, applied via #app.ko from JS */
+/* knockout theme root — Champions League knockout nights: silver starlight on navy (the
+   --gold variable name stays for the dozens of rules keyed on it; its value is now silver) */
 #app.ko {
-  --gold: #e8c35a;
-  --gold-dim: rgba(232, 195, 90, .35);
-  --accent: var(--gold);   /* recolors on-buttons, parlay odds, slip accents */
+  --gold: #dfe9ff;
+  --gold-dim: rgba(223, 233, 255, .35);
+  --accent: #8fb4ff;   /* recolors on-buttons, parlay odds, slip accents */
   background:
-    radial-gradient(120% 55% at 50% 0%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 60%),
+    var(--wm) no-repeat right -78px bottom -78px / 270px,
+    radial-gradient(120% 55% at 50% 0%, color-mix(in srgb, var(--gold) 7%, transparent), transparent 60%),
     var(--bg);
 }
 #app.ko .bar {
   border-bottom-color: transparent;
   background: linear-gradient(90deg, transparent 3%, color-mix(in srgb, var(--gold) 40%, transparent) 50%, transparent 97%) left bottom / 100% 1px no-repeat;
 }
-#app.ko .bar .title { color: #ece5d3; }
+#app.ko .bar .title { color: #e6edff; }
 #app.ko .hero {
   background:
     radial-gradient(120% 100% at 0% 30%, color-mix(in srgb, var(--home) 20%, transparent), transparent 55%),

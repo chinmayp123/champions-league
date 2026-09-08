@@ -18,7 +18,7 @@ function saveState(patch) {
 }
 let state = loadState();
 
-const COMPACT = { width: 290, height: 300 }; // taller since knockouts: advance bar + 90' line
+const COMPACT = { width: 290, height: 324 }; // two-row title bar (native caption overlay) + advance bar
 const EXPANDED = { width: 960, height: 940 };
 // the expanded size to use — the user's saved drag-size if they've resized, else the default
 const expandedSize = () => ({ width: state.ew || EXPANDED.width, height: state.eh || EXPANDED.height });
@@ -44,9 +44,15 @@ function createWindow() {
     x: state.x ?? undefined,
     y: state.y ?? undefined,
     frame: false,
+    // Windows Controls Overlay: native min/max/close drawn over our title bar. It's what makes
+    // Windows 11 Snap Layouts appear on hover (so several widgets can be tiled 2×2) — a plain
+    // frameless window has no maximize button for the flyout to hang off. Transparent colour so
+    // only the glyphs show over the glass bar; height matches .bar.
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#00000000", symbolColor: "#9aa7b6", height: 34 },
     transparent: true,
     resizable: true,
-    minimizable: false, // it's a floating widget — minimizing a transparent window makes it vanish
+    minimizable: true,  // native caption minimize; comes back from the taskbar or the tray
     alwaysOnTop: state.pinned,
     skipTaskbar: false,
     fullscreenable: false,
@@ -68,13 +74,20 @@ function createWindow() {
   // persist the expanded size when the user drag-resizes (so it stays put across launches);
   // ignore resizes while compact so the compact preset isn't overwritten
   win.on("resize", () => {
-    if (!state.expanded) return;
     const [w, h] = win.getSize();
+    // a compact widget that gets snapped/dragged well past the compact preset (e.g. into a
+    // Snap Layouts quadrant) flips to the expanded layout — the compact layout can't use the room
+    if (!state.expanded) {
+      if (w >= COMPACT.width + 120 || h >= COMPACT.height + 160) {
+        saveState({ expanded: true, ew: w, eh: h });
+        win.webContents.send("config", { expanded: true, pinned: state.pinned, query: state.query });
+      }
+      return;
+    }
     saveState({ ew: w, eh: h });
   });
-  // belt-and-suspenders: if the OS ever forces a minimize (Win+D / Win+M) despite
-  // minimizable:false, bounce straight back — the widget should never vanish on its own.
-  win.on("minimize", () => { win.restore(); win.show(); });
+  // minimized widgets come back from the taskbar button, the tray, or a fresh data push (a
+  // goal toast still fires while minimized — see notifyGoals)
   win.on("closed", () => { win = null; });
 
   // send the latest data once the page is ready
@@ -147,7 +160,7 @@ function buildTray() {
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAALElEQVQ4y2NgGAWjYBSMglEwCkbBKBgFo2AUjIJRMApGwSgYBaNgFAwHAAAFRAABxV0p7QAAAABJRU5ErkJggg=="
   );
   tray = new Tray(img);
-  tray.setToolTip("WorldCup widget");
+  tray.setToolTip("Champions League widget");
   const menu = Menu.buildFromTemplate([
     { label: "Show / hide", click: () => { if (win?.isVisible()) win.hide(); else showWidget(); } },
     { label: "Refresh now", click: () => poll() },
