@@ -1222,7 +1222,7 @@ export async function getStandings() {
       const entries = (g.standings?.entries || []).map((e) => {
         const st = Object.fromEntries((e.stats || []).map((s) => [s.name, s]));
         return {
-          abbr: e.team?.abbreviation || "", name: e.team?.displayName || "", logo: e.team?.logos?.[0]?.href || null,
+          abbr: e.team?.abbreviation || "", name: e.team?.displayName || "", logo: e.team?.logos?.[0]?.href || null, league: clubLeague(e.team?.displayName),
           rank: num(st, "rank"), played: num(st, "gamesPlayed") || 0,
           w: num(st, "wins") || 0, d: num(st, "ties") || 0, l: num(st, "losses") || 0,
           gd: st.pointDifferential?.displayValue ?? String(num(st, "pointDifferential") ?? "0"),

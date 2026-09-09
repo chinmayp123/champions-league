@@ -1105,7 +1105,7 @@ function matchSheet(m) {
   const tableRows = [...picked.values()].sort((a, b) => (b.rating || 0) - (a.rating || 0));
   let playersCard = null;
   if (tableRows.length) {
-    const hdr = h("div", { class: "tr h" }, ["", "Player", "Rating", "xG", "Shots", "G", "A", "Events"].map((t) => h("span", { text: t })));
+    const hdr = h("div", { class: "ptr h" }, ["", "Player", "Rating", "xG", "Shots", "G", "A", "Events"].map((t) => h("span", { text: t })));
     playersCard = cardEl("Players", "top rated + everyone with real chances · sorted by rating", [hdr, ...tableRows.map((p) => {
       const ev = [];
       for (const g of p.mine.filter((s) => s.type === "Goal" && !s.ownGoal)) ev.push(`Goal ${fmtMin(g)}`);
@@ -1113,7 +1113,7 @@ function matchSheet(m) {
       if (p.events.includes("assist")) ev.push("Assist");
       if (p.events.includes("yellowCard")) ev.push("Yellow card");
       if (p.events.includes("redCard")) ev.push("Red card");
-      return h("div", { class: "tr" }, [
+      return h("div", { class: "ptr" }, [
         avatar(p, p.side, "xs"),
         h("span", { class: "tn" }, [txt(p.name), h("em", { text: `${(p.side === "home" ? homeAb : awayAb)} · ${p.pos}${p.bench ? " · sub" : ""}` })]),
         h("span", { class: `trt ${ratingCls(p.rating)}`, text: p.rating != null ? p.rating.toFixed(1) : "—" }),
@@ -1628,30 +1628,51 @@ function renderStandings(data) {
     h("div", {}, [h("div", { class: "picks-sub", text: ucl ? "Two-legged ties from Feb · bracket replaces this once the phase ends" : "bracket replaces this once the groups finish" }), h("div", { class: "picks-sub", text: "tap a club to open its next game" })]),
   ]));
   const mine = new Set(last?.match ? [last.match.home.abbr, last.match.away.abbr] : []);
-  const headRow = () => h("div", { class: "tr h" }, ["#", "", "Club", "P", "W-D-L", "GD", "Pts", "Zone"].map((t, i) => h("span", { class: i === 4 ? "wdl" : i === 7 ? "zone" : "", text: t })));
-  const row = (e, bound) => h("div", { class: `tr ${e.zone || (e.advanced ? "adv" : "out")}${bound ? " zone-end" : ""}${mine.has(e.abbr) ? " mine" : ""}`, title: e.name, onclick: () => { const g = teamGame(e.abbr); if (g) choose(g.id); } }, [
-    h("span", { class: "rk", text: e.rank != null ? String(e.rank) : "" }),
-    h("span", {}, [crest(e.abbr, e.logo, "xs")]),
-    h("span", { class: "team", text: e.name || e.abbr }),
-    h("span", { text: String(e.played) }),
-    h("span", { class: "wdl", text: `${e.w}-${e.d}-${e.l}` }),
-    h("span", { text: fmtGD(e.gd) }),
-    h("span", { class: "pts", text: String(e.pts) }),
-    h("span", { class: "zone", text: zoneLabel(e) }),
-  ]);
-  const table = (entries) => {
-    const bounds = new Set(entries.map((e, i, a) => (a[i + 1] && a[i + 1].zone !== e.zone ? e.rank : null)).filter(Boolean));
-    return h("div", { class: "tbl" }, [headRow(), ...entries.map((e) => row(e, bounds.has(e.rank)))]);
+  // last result + next fixture per club, from the slate the widget already carries
+  const games = (abbr) => (last?.matches || []).filter((mt) => mt.homeAbbr === abbr || mt.awayAbbr === abbr);
+  const lastOf = (abbr) => {
+    const done = games(abbr).filter((mt) => mt.state === "post").sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    if (!done) return null;
+    const home = done.homeAbbr === abbr, gf = home ? done.homeScore : done.awayScore, ga = home ? done.awayScore : done.homeScore;
+    return { cls: gf > ga ? "w" : gf < ga ? "l" : "d", text: `${gf}–${ga} ${home ? "v" : "@"} ${home ? done.awayAbbr : done.homeAbbr}`, id: done.id };
+  };
+  const nextOf = (abbr) => {
+    const up = games(abbr).filter((mt) => mt.state !== "post").sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+    if (!up) return null;
+    const home = up.homeAbbr === abbr;
+    return { abbr: home ? up.awayAbbr : up.homeAbbr, logo: home ? up.awayLogo : up.homeLogo, home, when: up.live ? (up.statusText || "LIVE") : `${fmtDay(up.date).replace(/,.*$/, "")} ${fmtTime(up.date)}`, id: up.id, live: !!up.live };
+  };
+  const CUT = { adv: "Places 1–8 · straight to the round of 16", po: "Places 9–24 · two-legged play-off in February for the last eight R16 spots", out: "Places 25–36 · out of Europe" };
+  const headRow = () => h("div", { class: "tr h" }, ["#", "", "Club · domestic league", "P", "W-D-L", "GD", "Pts", "Last", "Next", "Zone"].map((t, i) => h("span", { class: i === 4 ? "wdl" : i === 7 ? "last" : i === 8 ? "next" : i === 9 ? "zone" : i === 0 ? "rk" : "", text: t })));
+  const row = (e) => {
+    const lr = lastOf(e.abbr), nx = nextOf(e.abbr);
+    const z = e.zone || (e.advanced ? "adv" : "out");
+    const r = h("div", { class: `tr ${z}${mine.has(e.abbr) ? " mine" : ""}`, title: `${e.name} · open the next game`, onclick: () => { const g = nx || lr; if (g) choose(g.id); } }, [
+      h("span", { class: "rk", text: e.rank != null ? String(e.rank) : "" }),
+      h("span", {}, [crest(e.abbr, e.logo, "xs")]),
+      h("span", { class: "team" }, [txt(e.name || e.abbr), e.league ? h("em", { class: "lg", text: e.league }) : null]),
+      h("span", { text: String(e.played) }),
+      h("span", { class: "wdl", text: `${e.w}-${e.d}-${e.l}` }),
+      h("span", { text: fmtGD(e.gd) }),
+      h("span", { class: "pts", text: String(e.pts) }),
+      h("span", { class: "last" }, [lr ? h("span", { class: `res ${lr.cls}`, text: lr.text }) : h("span", { class: "res d", text: "—" })]),
+      h("span", { class: "next" }, [nx ? h("span", { class: `nx${nx.live ? " live" : ""}` }, [crest(nx.abbr, nx.logo, "xs"), h("b", { text: `${nx.home ? "v" : "@"} ${nx.abbr}` }), txt(nx.when)]) : h("span", { class: "nx", text: "—" })]),
+      h("span", { class: "zone", text: zoneLabel(e) }),
+    ]);
+    if (mine.has(e.abbr)) r.appendChild(h("span", { class: "tracked", text: "tracked" }));
+    return r;
   };
   for (const g of data.groups) {
     if (data.groups.length > 1) wrap.appendChild(h("div", { class: "eyebrow grp-name", text: g.name }));
-    if (g.entries.length > 20 && expanded) {
-      const half = Math.ceil(g.entries.length / 2);
-      // zone boundaries are computed on the full list so the split never hides a divider
-      const bounds = new Set(g.entries.map((e, i, a) => (a[i + 1] && a[i + 1].zone !== e.zone ? e.rank : null)).filter(Boolean));
-      const tbl = (list) => h("div", { class: "tbl" }, [headRow(), ...list.map((e) => row(e, bounds.has(e.rank)))]);
-      wrap.appendChild(h("div", { class: "cols" }, [tbl(g.entries.slice(0, half)), tbl(g.entries.slice(half))]));
-    } else wrap.appendChild(table(g.entries));
+    const tbl = h("div", { class: "tbl" }, [headRow()]);
+    let lastZone = null;
+    for (const e of g.entries) {
+      const z = e.zone || (e.advanced ? "adv" : "out");
+      // a labelled cut line where the zone changes (only when the competition has zones)
+      if (ucl && z !== lastZone) { tbl.appendChild(h("div", { class: `cut ${z}` }, [h("i"), txt(CUT[z] || "")])); lastZone = z; }
+      tbl.appendChild(row(e));
+    }
+    wrap.appendChild(tbl);
   }
   return wrap;
 }
