@@ -9,16 +9,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { COMP } from "./competition.mjs";
+import { COMP, readConfig } from "./competition.mjs";
 
 const API = "https://api.oddspapi.io/v4";
 const SOCCER = 10, WC = COMP.oddspapiTournamentId; // "WC" = the active competition's tournamentId
 const H = { Accept: "application/json", "User-Agent": "worldcup-tracker" };
 
-function cfg() {
-  try { return JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "odds.config.json"), "utf8")); }
-  catch { return {}; }
-}
+const cfg = () => readConfig();
 const KEY = process.env.ODDSPAPI_KEY || cfg().oddspapiKey || null;
 // books to try in order for the price (the venue you bet first, then a liquid backup). Kept to
 // two to limit how many calls a cache-miss can cost against the 250-req/month free quota.

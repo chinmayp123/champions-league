@@ -11,6 +11,13 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// where the user's own files live — odds.config.json (keys) and the bet log. In the repo that's
+// the repo itself; the packaged desktop app points this at Electron's per-user data folder, so
+// nothing personal ships inside the installer and the bet log survives updates.
+export const DATA_DIR = process.env.STARBALL_DATA_DIR || HERE;
+export function readConfig() {
+  try { return JSON.parse(readFileSync(join(DATA_DIR, "odds.config.json"), "utf8")); } catch { return {}; }
+}
 
 export const COMPETITIONS = {
   ucl: {
@@ -38,7 +45,7 @@ export const COMPETITIONS = {
     // how far the match picker / widget looks: matchweeks are Tue–Thu every 2–3 weeks, so a
     // ±2-day window would show nothing between them
     lookBackDays: 4, lookAheadDays: 21,
-    betlogDir: join(HERE, "bets", "ucl-2026-27"),
+    betlogDir: join(DATA_DIR, "bets", "ucl-2026-27"),
   },
   wc: {
     key: "wc-2026",
@@ -59,14 +66,14 @@ export const COMPETITIONS = {
     knockoutWindow: ["20260627", "20260720"],
     twoLegged: false,
     lookBackDays: 2, lookAheadDays: 2,
-    betlogDir: join(HERE, "bets"),
+    betlogDir: join(DATA_DIR, "bets"),
   },
 };
 
 function pick() {
   let key = process.env.COMPETITION;
   if (!key) {
-    try { key = JSON.parse(readFileSync(join(HERE, "odds.config.json"), "utf8")).competition; } catch { /* default */ }
+    key = readConfig().competition;
   }
   return COMPETITIONS[(key || "ucl").toLowerCase()] || COMPETITIONS.ucl;
 }

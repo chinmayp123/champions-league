@@ -1,7 +1,7 @@
 // Electron main process — a frameless, always-on-top desktop widget around the shared
 // data/model layer in ../lib.mjs. Main fetches + computes (Node, no CORS issues) and pushes
 // plain JSON to the renderer, which draws the compact/full UI.
-const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, Notification } = require("electron");
+const { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage, Notification, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
@@ -32,6 +32,11 @@ let tray;
 let timer;
 let lastData = null;
 
+// the user's files (odds.config.json with their keys, the bet log) live in Electron's per-user
+// data folder once the app is installed — the repo itself while running from source
+const DATA_DIR = app.isPackaged ? app.getPath("userData") : path.join(__dirname, "..");
+process.env.STARBALL_DATA_DIR = DATA_DIR;
+
 async function loadLib() {
   // dynamic import of an absolute path needs a file:// URL on Windows
   lib = await import(pathToFileURL(path.join(__dirname, "..", "lib.mjs")).href);
@@ -52,8 +57,9 @@ function createWindow() {
     // Windows 11 Snap Layouts appear on hover (so several widgets can be tiled 2×2) — a plain
     // frameless window has no maximize button for the flyout to hang off. Transparent colour so
     // only the glyphs show over the glass bar; height matches .bar.
-    titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#00000000", symbolColor: "#8f9ac4", height: overlayHeight(state.expanded) },
+    // macOS: the traffic lights sit inset in our title bar instead of a caption overlay
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
+    titleBarOverlay: process.platform === "darwin" ? undefined : { color: "#00000000", symbolColor: "#8f9ac4", height: overlayHeight(state.expanded) },
     // opaque: the Broadcast shell paints its own navy, and an opaque window is what lets Windows
     // maximise it and hang the Snap Layouts flyout off the caption's maximise button
     transparent: false,
@@ -100,7 +106,7 @@ function createWindow() {
 
   // send the latest data once the page is ready
   win.webContents.on("did-finish-load", () => {
-    win.webContents.send("config", { expanded: state.expanded, pinned: state.pinned, query: state.query });
+    win.webContents.send("config", { expanded: state.expanded, pinned: state.pinned, query: state.query, mac: process.platform === "darwin" });
     if (lastData) win.webContents.send("update", lastData);
   });
 }
@@ -149,7 +155,7 @@ function applyOpenAtLogin() {
     app.setLoginItemSettings({
       openAtLogin: !!state.openAtLogin,
       path: process.execPath,
-      args: [path.resolve(__dirname, "main.cjs")],
+      args: app.isPackaged ? [] : [path.resolve(__dirname, "main.cjs")], // installed: the exe alone
     });
   } catch {}
 }
@@ -170,6 +176,8 @@ function buildTray() {
   const menu = Menu.buildFromTemplate([
     { label: "Show / hide", click: () => { if (win?.isVisible()) win.hide(); else showWidget(); } },
     { label: "Refresh now", click: () => poll() },
+    // where odds.config.json (optional API keys) and the bet log live
+    { label: "Open data folder", click: () => shell.openPath(DATA_DIR) },
     { type: "separator" },
     {
       label: "Start with Windows", type: "checkbox", checked: !!state.openAtLogin,

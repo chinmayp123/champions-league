@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday, fotmobPitch } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelProps } from "./fanduel.mjs";
-import { COMP, isPhaseSlug, compMeta, clubLeague } from "./competition.mjs";
+import { COMP, isPhaseSlug, compMeta, clubLeague, readConfig } from "./competition.mjs";
 
 // every competition-specific id lives in competition.mjs — repoint the tool there, not here
 export const BASE = `https://site.api.espn.com/apis/site/v2/sports/soccer/${COMP.espn}`;
@@ -21,13 +21,7 @@ const ODDS_BASE = `${SPORT_BASE}/odds`;
 // this module — never hard-coded, so the public repo stays clean.
 function loadOddsKey() {
   if (process.env.ODDS_API_KEY) return process.env.ODDS_API_KEY.trim();
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    const cfg = JSON.parse(readFileSync(join(here, "odds.config.json"), "utf8"));
-    return (cfg.oddsApiKey || "").trim() || null;
-  } catch {
-    return null;
-  }
+  return (readConfig().oddsApiKey || "").trim() || null;
 }
 export const ODDS_KEY = loadOddsKey();
 

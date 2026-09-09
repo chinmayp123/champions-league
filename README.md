@@ -36,6 +36,15 @@ npm install      # first time — pulls Electron
 npm run widget   # launch the floating widget
 ```
 
+**Installers.** `npm run dist` builds `dist/Starball-Lab-Setup-<version>.exe` (Windows). Pushing
+a version tag (`git tag v1.1.0 && git push origin v1.1.0`) makes GitHub build the Windows setup
+and macOS `.dmg` files and attach them to a release. The builds aren't code-signed: Windows
+shows a SmartScreen "More info → Run anyway" the first time, macOS needs right-click → Open the
+first time. The installed app keeps its files (optional `odds.config.json` with API keys, the
+bet log) in the per-user data folder — tray menu → "Open data folder". Without keys it still
+runs: ESPN, FotMob, FanDuel and Action Network are keyless; only cross-book line shopping and
+OddsPapi best prices need a key.
+
 The shell is parlay-lab's "Broadcast" system (Barlow Condensed / JetBrains Mono, square
 corners, lower-third + crawl) re-skinned to Champions League navy — the "Starball Lab" look.
 

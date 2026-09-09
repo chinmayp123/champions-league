@@ -1,14 +1,15 @@
 {
-  "name": "worldcup-tracker",
-  "version": "1.0.0",
-  "description": "Live soccer match tracker + betting harness (Champions League 2026-27; built for the 2026 World Cup)",
+  "name": "starball-lab",
+  "version": "1.1.0",
+  "description": "Starball Lab \u2014 Champions League match tracker + betting harness (desktop widget)",
   "type": "module",
   "bin": {
     "worldcup": "./worldcup.mjs"
   },
   "scripts": {
     "start": "node worldcup.mjs",
-    "widget": "electron widget/main.cjs"
+    "widget": "electron widget/main.cjs",
+    "dist": "electron-builder --win"
   },
   "engines": {
     "node": ">=18"
@@ -16,6 +17,60 @@
   "license": "MIT",
   "devDependencies": {
     "electron": "^42.4.0",
+    "electron-builder": "^26.15.3",
     "playwright-core": "^1.61.1"
+  },
+  "main": "widget/main.cjs",
+  "build": {
+    "appId": "lab.starball.widget",
+    "productName": "Starball Lab",
+    "artifactName": "Starball-Lab-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "asar": true,
+    "files": [
+      "widget/**/*",
+      "*.mjs",
+      "package.json",
+      "!widget/make-icon.mjs",
+      "!morning.mjs",
+      "!worldcup.mjs",
+      "!dryrun.mjs"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "widget/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Starball Lab"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "widget/icon.png",
+      "category": "public.app-category.sports"
+    },
+    "dmg": {
+      "artifactName": "Starball-Lab-${version}-${arch}.${ext}"
+    }
   }
 }

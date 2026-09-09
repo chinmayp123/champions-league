@@ -257,6 +257,7 @@ function goHit(hit) {
 
 // ── data pushes from main ─────────────────────────────────────────────────────
 window.wc.onConfig((cfg) => {
+  if (cfg.mac) app.classList.add("mac");
   expanded = !!cfg.expanded;
   pinned = !!cfg.pinned;
   $("btn-pin").classList.toggle("on", pinned);

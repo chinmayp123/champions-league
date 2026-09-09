@@ -17,18 +17,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { COMP } from "./competition.mjs";
+import { COMP, readConfig } from "./competition.mjs";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
 // FanDuel's public web-app key — a constant baked into their frontend bundle, not a secret.
 const AK = "FhMFpcPWXMeyZxOx";
 
-function cfg() {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url));
-    return JSON.parse(readFileSync(join(here, "odds.config.json"), "utf8"));
-  } catch { return {}; }
-}
+const cfg = () => readConfig();
 const REGION = (process.env.FANDUEL_REGION || cfg().fanduelRegion || "nj").toLowerCase();
 const BASE = `https://sbapi.${REGION}.sportsbook.fanduel.com/api`;
 // the FanDuel page that lists World Cup matches. Paste the slug from the sportsbook URL
