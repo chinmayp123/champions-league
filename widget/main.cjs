@@ -6,6 +6,12 @@ const path = require("path");
 const fs = require("fs");
 const { pathToFileURL } = require("url");
 
+// Unpackaged Electron apps all share one profile folder ("Electron") unless they name themselves,
+// which made the single-instance lock, the window state and the data folder collide with the
+// user's other Electron projects (launching Starball while another was running showed THAT app).
+// Name the app before anything touches userData so it gets its own folder.
+app.setName("Starball Lab");
+if (!app.isPackaged) app.setPath("userData", path.join(app.getPath("appData"), "Starball Lab"));
 const STATE_FILE = path.join(app.getPath("userData"), "widget-state.json");
 const DEFAULTS = { x: null, y: null, expanded: false, query: null, pinned: true, openAtLogin: true, ew: null, eh: null };
 function loadState() {
