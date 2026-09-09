@@ -892,6 +892,7 @@ function pitchCard(m) {
       if (p.rating != null) av.appendChild(h("span", { class: `rt ${ratingCls(p.rating)}`, text: p.rating.toFixed(1) }));
       if (goals) av.appendChild(h("span", { class: "badge goal" }, Array.from({ length: goals }, () => ballSvg())));
       if (og) av.appendChild(h("span", { class: "badge og", text: "OG" }));
+      if (p.events.includes("assist")) av.appendChild(h("span", { class: "badge as", text: "A" }));
       if (p.events.includes("redCard")) av.appendChild(h("span", { class: "badge rc" }));
       else if (p.events.includes("yellowCard")) av.appendChild(h("span", { class: "badge yc" }));
       const node = h("div", { class: `pl ${side}`, style: pct(x, y) }, [av, h("div", { class: "nm", text: p.short })]);

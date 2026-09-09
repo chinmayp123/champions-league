@@ -573,6 +573,8 @@ td.lead { color: var(--text); }
 .badge { position: absolute; display: inline-flex; gap: 2px; align-items: center; }
 .badge.goal { right: -11px; top: -9px; } .badge.goal .ball { width: 14px; height: 14px; display: block; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
 .badge.og { right: -12px; top: -8px; font: 800 8px/1 var(--cd); padding: 2px 3px; background: var(--neg); color: #fff; }
+.badge.as { left: -11px; bottom: -6px; font: 800 9px/1 var(--cd); padding: 2px 4px; background: var(--accent); color: #fff; border: 1px solid var(--ink); }
+.badge.goal + .badge.as, .badge.og + .badge.as { left: -11px; }
 .badge.yc, .badge.rc { left: 18px; bottom: -7px; width: 7px; height: 10px; background: var(--warn); border: 1px solid var(--ink); } .badge.rc { background: var(--neg); }
 .nm { position: absolute; top: 27px; left: -60px; width: 120px; text-align: center; font: 800 12.5px/1 var(--cd); text-transform: uppercase; letter-spacing: .3px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.9); pointer-events: none; }
 /* the popover: one element, moved to whatever is hovered */
