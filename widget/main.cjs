@@ -192,6 +192,9 @@ function buildTray() {
 
 // one identity for the taskbar group, toasts and the desktop shortcut (otherwise it's "Electron")
 app.setAppUserModelId("starball-lab");
+// one copy at a time: launching again just brings the running one to the front
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on("second-instance", () => showWidget());
 app.whenReady().then(async () => {
   await loadLib();
   createWindow();
@@ -200,7 +203,9 @@ app.whenReady().then(async () => {
   poll();
 });
 
-app.on("window-all-closed", () => { /* keep running in tray */ });
+// closing the window quits — a hidden-to-tray copy that lives on made every relaunch spawn a
+// new instance on top of it. "Show / hide" in the tray menu is the way to tuck it away.
+app.on("window-all-closed", () => app.quit());
 app.on("activate", () => { if (!win) createWindow(); });
 
 // --- IPC from the renderer ---
