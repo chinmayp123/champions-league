@@ -255,6 +255,7 @@ img { image-rendering: auto; }
 .pick-toggle:hover { color: var(--text); border-color: var(--line3); }
 
 /* ── tickets (the card, record history) ───────────────────────────────────── */
+.card.notes { margin: 8px 0 14px; } .card.notes .gk .est { max-width: 62%; white-space: normal; }
 .tk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 8px 0 14px; }
 .compact .tk-grid { grid-template-columns: 1fr; gap: 8px; }
 .tkt { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); }

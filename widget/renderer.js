@@ -375,7 +375,12 @@ function renderMatchday() {
   else if (parlays.error) wrap.appendChild(h("div", { class: "center", text: `Couldn’t build: ${parlays.error}` }));
   else {
     const singles = parlays.singles || [];
-    if (!singles.length && !parlays.longshot) wrap.appendChild(h("div", { class: "center", text: "No qualifying bets on this slate yet." }));
+    if (!singles.length && !parlays.longshot) wrap.appendChild(h("div", { class: "center", text: "No qualifying bets on this slate." }));
+    // what the engine looked at and why each game did or didn't make it
+    if (parlays.notes && parlays.notes.length) wrap.appendChild(h("div", { class: "card notes" }, [
+      h("div", { class: "card-h" }, [h("span", { class: "card-t", text: "Why" }), h("span", { class: "card-s", text: `edge band ${3}–${7}% vs FanDuel · no long shots · model must agree with the market` })]),
+      ...parlays.notes.map((n) => h("div", { class: "gk" }, [h("span", {}, [gameChip(n.game) || txt(n.game)]), h("span", { class: `est${n.ok ? " up" : ""}`, text: n.text })])),
+    ]));
     const grid = h("div", { class: "tk-grid" });
     for (const g of singles) grid.appendChild(ticket(g.bet, { kind: `${axisOf(g.bet.legs[0]?.market)} axis · single`, game: g.game, stake: parlays.stake }));
     if (parlays.longshot) grid.appendChild(ticket(parlays.longshot, { kind: "for fun · longshot · not tracked", game: "one leg per game", stake: parlays.stake, fun: true }));

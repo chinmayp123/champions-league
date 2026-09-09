@@ -391,7 +391,21 @@ export async function generateDailyParlays(stake = 10, events = null) {
   // per game, across DIFFERENT games so the legs are uncorrelated. Max payout, low hit rate.
   const longLegs = games.map((g) => longLeg(g.candidates)).filter(Boolean);
   const longshot = longLegs.length >= 2 ? buildParlay(longLegs, stake) : null;
-  return { date: events ? bettingDay(events?.[0]?.date || Date.now()) : slate, stake, singles, longshot };
+  // why each game did or didn't make the card — so an empty card still explains itself
+  const notes = games.map((g) => {
+    const legs = g.candidates.filter((l) => l.market !== "Corners");
+    const bet = legs.filter(bettable);
+    if (bet.length) return { game: g.game, ok: true, text: `${bet.length} leg${bet.length === 1 ? "" : "s"} in the band` };
+    const guardAll = legs.length && legs.every((l) => l.guard) ? legs[0].guard : null;
+    if (guardAll) return { game: g.game, ok: false, text: guardAll };
+    const cands = legs.filter((l) => !l.guard && l.coherent && !l.fadePublic);
+    const best = cands.sort((a, b) => b.rawEdge - a.rawEdge)[0];
+    if (!best) return { game: g.game, ok: false, text: "every leg either fights the model's own script or sits where sharper money is fading" };
+    const e = Math.round(best.rawEdge * 1000) / 10;
+    return { game: g.game, ok: false, text: e >= EDGE_MAX * 100 ? `best edge ${best.pick} ${e >= 0 ? "+" : ""}${e}% is over the ${Math.round(EDGE_MAX * 100)}% ceiling — too good to be true`
+      : `best edge ${best.market === "Moneyline" ? "" : best.market + " "}${best.pick} ${e >= 0 ? "+" : ""}${e}% is under the ${Math.round(EDGE_MIN * 100)}% floor` };
+  });
+  return { date: events ? bettingDay(events?.[0]?.date || Date.now()) : slate, stake, singles, longshot, notes };
 }
 
 // Parlay BUILDER feed: every upcoming game with its full set of priced candidate legs (all
