@@ -238,13 +238,24 @@ export function matchMinute(st) {
   return m ? Number(m[1]) : null;
 }
 
-// model-derived saves line for a keeper (no book offers this market — model estimate only)
-export function keeperSaveLine(saves, minute, state, line = 2.5) {
+// live pace vs pre-match prior: how much to believe the in-game rate after `elapsed` minutes.
+// A 30-minute half-life — 10' in the prior carries 75%, at half time it's 40%, at 90' 25% — so
+// a keeper with 0 saves after 8 minutes projects near his pre-match number, not 0.0.
+const paceWeight = (elapsed) => elapsed / (elapsed + 30);
+const blendRate = (liveRate, priorTotal, elapsed, FT) => {
+  if (priorTotal == null || !(priorTotal >= 0)) return liveRate;
+  const w = paceWeight(elapsed);
+  return w * liveRate + (1 - w) * (priorTotal / FT);
+};
+
+// model-derived saves line for a keeper (no book offers this market — model estimate only).
+// `prior` = the pre-match projected full-match saves for this keeper, when we have one.
+export function keeperSaveLine(saves, minute, state, line = 2.5, prior = null) {
   const FT = 95;
   if (state === "post") return { proj: saves, settled: true, over: saves > line, line };
   if (minute == null) return null;
   const elapsed = Math.max(minute, 10);
-  const rate = saves / elapsed;
+  const rate = blendRate(saves / elapsed, prior, elapsed, FT);
   const remMin = Math.max(0, FT - minute);
   const lambdaRem = rate * remMin;
   const proj = saves + lambdaRem;
@@ -256,15 +267,18 @@ export function keeperSaveLine(saves, minute, state, line = 2.5) {
 // model-derived corners line per side + total O/U. Corners per side ARE real live data
 // (ESPN box score); there's no corners betting market in the feed, so the O/U is a model
 // estimate. Extrapolate each side's corner rate to full time; price the total via Poisson.
-export function cornersModel(hC, aC, minute, state, line = 9.5) {
+// `prior` = { home, away } pre-match projected corners per side, when we have them.
+export function cornersModel(hC, aC, minute, state, line = 9.5, prior = null) {
   const FT = 95;
   if (state === "post") { const total = hC + aC; return { settled: true, home: hC, away: aC, total, over: total > line, line }; }
   if (minute == null) return null; // pre-match: no corners yet
   const elapsed = Math.max(minute, 10);
   const remMin = Math.max(0, FT - minute);
-  const projH = hC + (hC / elapsed) * remMin;
-  const projA = aC + (aC / elapsed) * remMin;
-  const lambdaRemTotal = ((hC + aC) / elapsed) * remMin;
+  const rateH = blendRate(hC / elapsed, prior?.home, elapsed, FT);
+  const rateA = blendRate(aC / elapsed, prior?.away, elapsed, FT);
+  const projH = hC + rateH * remMin;
+  const projA = aC + rateA * remMin;
+  const lambdaRemTotal = (rateH + rateA) * remMin;
   const need = Math.ceil(line) - (hC + aC);
   const pOver = need <= 0 ? 1 : 1 - poissonCdf(need - 1, lambdaRemTotal);
   return { settled: false, home: hC, away: aC, projH, projA, totalProj: projH + projA, pOver, need, line, odds: probToAmerican(pOver) };
@@ -713,7 +727,8 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
     const fdML = [fd(slotHome)?.price, fd("draw")?.price, fd(slotAway)?.price];
     const raw = fdML.map(ml2prob);
     const sumP = raw.reduce((a, b) => a + (b || 0), 0) || 1;
-    const probs = raw.map((p) => (p == null ? null : Math.round((p / sumP) * 100)));
+    const complete = raw.every((p) => p != null); // a suspended side can't be de-vigged around
+    const probs = raw.map((p) => (p == null || !complete ? null : Math.round((p / sumP) * 100)));
     const mk = (slot, i) => {
       const b = liveOdds.best(slot);
       return {
@@ -726,7 +741,8 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
   } else if (publicBetting?.fanduel) {
     // real FanDuel moneyline via Action Network (free, no Odds API quota)
     const f = publicBetting.fanduel;
-    const cell = (c) => ({ ml: fmtAmerican(c.ml), prob: c.prob });
+    const complete = [f.home, f.draw, f.away].every((c) => c && c.ml != null);
+    const cell = (c) => ({ ml: fmtAmerican(c.ml), prob: complete ? c.prob : null });
     odds = { source: "fanduel-an", home: cell(f.home), draw: cell(f.draw), away: cell(f.away) };
   } else {
     const o = (sum.pickcenter || sum.odds || [])[0];
@@ -746,7 +762,7 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
   if (Object.keys(hs).length) {
     const hC = parseInt(hs.wonCorners || 0, 10) || 0;
     const aC = parseInt(as.wonCorners || 0, 10) || 0;
-    corners = cornersModel(hC, aC, minute, state);
+    corners = cornersModel(hC, aC, minute, state, 9.5, priors?.corners ? { home: priors.corners.home, away: priors.corners.away } : null);
   }
 
   // prediction + recommended bets — run-of-play model once live, market-based pre-match
@@ -786,7 +802,8 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
       const ps = Object.fromEntries((p.stats || []).map((s) => [s.name, s.value]));
       if (!ps.appearances) continue;
       const saves = ps.saves ?? 0;
-      const ln = keeperSaveLine(saves, minute, state);
+      const side = r.team?.id === home.team.id ? "home" : r.team?.id === away.team.id ? "away" : null;
+      const ln = keeperSaveLine(saves, minute, state, 2.5, side && priors?.saves ? priors.saves[side]?.proj : null);
       keepers.push({
         abbr, name: p.athlete?.displayName || "?", saves, ga: ps.goalsConceded ?? 0, faced: ps.shotsFaced ?? 0,
         line: ln ? (ln.settled ? { settled: true, over: ln.over, value: ln.line }

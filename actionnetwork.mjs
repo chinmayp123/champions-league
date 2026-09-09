@@ -121,7 +121,10 @@ export async function actionPublicBetting(home, away) {
       const ml = { home: fdMl.home?.odds, draw: fdMl.draw?.odds, away: fdMl.away?.odds };
       const raw = [ml2p(ml.home), ml2p(ml.draw), ml2p(ml.away)];
       const s = raw.reduce((x, y) => x + (y || 0), 0) || 1;
-      const cell = (mlv, p) => ({ ml: mlv ?? null, prob: p != null ? Math.round((p / s) * 100) : null });
+      // a suspended side (live, after a goal) leaves two prices — de-vigging those two would call a
+      // +3000 draw "72%"; implied chances need all three
+      const complete = raw.every((p) => p != null);
+      const cell = (mlv, p) => ({ ml: mlv ?? null, prob: p != null && complete ? Math.round((p / s) * 100) : null });
       const H = cell(ml.home, raw[0]), D = cell(ml.draw, raw[1]), A = cell(ml.away, raw[2]);
       const fdTot = fanduelMarket(g, "total");
       fanduel = {

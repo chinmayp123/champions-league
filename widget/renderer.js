@@ -690,7 +690,7 @@ function renderMatch(m) {
       const pg = m.pregameProj, c = pg.corners;
       blocks.push(h("div", { class: "label", text: `Pregame projections · ${pg.basis} · model est.` }));
       if (pg.shots) blocks.push(kv(`${m.home.abbr} shots ${pg.shots.home.shots.toFixed(1)} (${pg.shots.home.sot.toFixed(1)} on target)`, `${pg.shots.away.shots.toFixed(1)} (${pg.shots.away.sot.toFixed(1)} on target) ${m.away.abbr}`));
-      blocks.push(kv(`Corners total ${c.total.toFixed(1)}`, `O${c.line} ${Math.round(c.pOver * 100)}%${c.odds != null ? ` (${fmtAm(c.odds)})` : ""}`));
+      blocks.push(kv(`Corners total ${c.total.toFixed(1)}`, `over ${c.line} ${Math.round(c.pOver * 100)}%${c.odds != null ? ` (${fmtAm(c.odds)})` : ""}`));
       blocks.push(kv(`${m.home.abbr} ${c.home.toFixed(1)} · ${m.away.abbr} ${c.away.toFixed(1)}`, "corners per side"));
       const sv = (abbr, s) => blocks.push(kv(`${abbr} keeper saves`, `proj ${s.proj.toFixed(1)} · O${s.line} ${Math.round(s.pOver * 100)}%${s.odds != null ? ` (${fmtAm(s.odds)})` : ""}`));
       sv(m.home.abbr, pg.saves.home); sv(m.away.abbr, pg.saves.away);
@@ -996,11 +996,11 @@ function popContent(m, key) {
     if (c) {
       row("Won", String(side === "home" ? c.home : c.away));
       if (!c.settled) row("Projected", `${(side === "home" ? c.projH : c.projA).toFixed(1)} · total ${c.totalProj.toFixed(1)}`);
-      row(`Total O${c.line}`, c.settled ? `final ${c.total} · ${c.over ? "over ✓" : "under ✗"}` : c.need <= 0 ? "already over ✓" : `${Math.round(c.pOver * 100)}%${c.odds != null ? ` (${fmtAm(c.odds)})` : ""}`);
+      row(`Total over ${c.line}`, c.settled ? `final ${c.total} · ${c.over ? "over ✓" : "under ✗"}` : c.need <= 0 ? "already over ✓" : `${Math.round(c.pOver * 100)}%${c.odds != null ? ` (${fmtAm(c.odds)})` : ""}`);
     } else if (m.pregameProj?.corners) {
       const pc = m.pregameProj.corners;
       row("Projected", `${(side === "home" ? pc.home : pc.away).toFixed(1)} · total ${pc.total.toFixed(1)}`);
-      row(`Total O${pc.line}`, `${Math.round(pc.pOver * 100)}%${pc.odds != null ? ` (${fmtAm(pc.odds)})` : ""}`);
+      row(`Total over ${pc.line}`, `${Math.round(pc.pOver * 100)}%${pc.odds != null ? ` (${fmtAm(pc.odds)})` : ""}`);
     } else note("Corner counts arrive with the live box score.");
     note("Display only — corners are benched from the card.");
     return box;
@@ -1027,8 +1027,8 @@ function popContent(m, key) {
 
   function keeperRows(k) {
     row("Saves", `${k.saves}${k.faced ? ` of ${k.faced} faced` : ""} · ${k.ga} conceded`);
-    if (k.line && !k.line.settled) row(`Saves O${k.line.value}`, k.line.need <= 0 ? "already over ✓" : `proj ${k.line.proj.toFixed(1)} · ${Math.round(k.line.pOver * 100)}%${k.line.odds != null ? ` (${fmtAm(k.line.odds)})` : ""}`);
-    else if (k.line && k.line.settled) row(`Saves O${k.line.value}`, `final ${k.saves} · ${k.line.over ? "over ✓" : "under ✗"}`);
+    if (k.line && !k.line.settled) row(`Saves over ${k.line.value}`, k.line.need <= 0 ? "already over ✓" : `proj ${k.line.proj.toFixed(1)} · ${Math.round(k.line.pOver * 100)}%${k.line.odds != null ? ` (${fmtAm(k.line.odds)})` : ""}`);
+    else if (k.line && k.line.settled) row(`Saves over ${k.line.value}`, `final ${k.saves} · ${k.line.over ? "over ✓" : "under ✗"}`);
   }
 }
 
@@ -1194,16 +1194,16 @@ function matchSheet(m) {
   const tile = (big, em, lbl, emCls = "") => h("div", { class: "lt" }, [h("b", {}, [txt(big), em ? h("em", { class: emCls, text: em }) : null]), h("i", { text: lbl })]);
   for (const k of m.keepers || []) {
     let em = "", cls = "";
-    if (k.line && !k.line.settled) { em = k.line.need <= 0 ? `O${k.line.value} ✓` : `O${k.line.value} ${Math.round(k.line.pOver * 100)}%`; cls = k.line.need <= 0 ? "" : "dim"; }
-    else if (k.line && k.line.settled) { em = `O${k.line.value} ${k.line.over ? "✓" : "✗"}`; cls = k.line.over ? "" : "neg"; }
-    tiles.push(tile(`${k.saves} sv`, em, `${k.name} · ${k.line && !k.line.settled ? `proj ${k.line.proj.toFixed(1)}${k.line.odds != null ? ` · ${fmtAm(k.line.odds)}` : ""}` : "saves line · final"}`, cls));
+    if (k.line && !k.line.settled) { em = k.line.need <= 0 ? `over ${k.line.value} ✓` : `over ${k.line.value} · ${Math.round(k.line.pOver * 100)}%`; cls = k.line.need <= 0 ? "" : "dim"; }
+    else if (k.line && k.line.settled) { em = `over ${k.line.value} ${k.line.over ? "✓" : "✗"}`; cls = k.line.over ? "" : "neg"; }
+    tiles.push(tile(`${k.saves} sv`, em, `${k.name} · ${k.line && !k.line.settled ? `projected ${k.line.proj.toFixed(1)} by full time${k.line.odds != null ? ` · ${fmtAm(k.line.odds)}` : ""}` : "saves line · final"}`, cls));
   }
   if (!m.keepers?.length && m.pregameProj?.saves) for (const side of ["home", "away"]) { const s = m.pregameProj.saves[side]; tiles.push(tile(`${s.proj.toFixed(1)}`, `O${s.line} ${Math.round(s.pOver * 100)}%`, `${side === "home" ? homeAb : awayAb} keeper saves · projected${s.odds != null ? ` · ${fmtAm(s.odds)}` : ""}`, "dim")); }
   if (m.corners) {
     const c = m.corners;
-    if (c.settled) tiles.push(tile(String(c.total), `O${c.line} ${c.over ? "✓" : "✗"}`, `Corners · ${homeAb} ${c.home} · ${awayAb} ${c.away} · display only`, c.over ? "" : "neg"));
-    else tiles.push(tile(`${c.home + c.away}`, c.need <= 0 ? `O${c.line} ✓` : `O${c.line} ${Math.round(c.pOver * 100)}%`, `Corners · ${homeAb} ${c.home} → ${c.projH.toFixed(1)} · ${awayAb} ${c.away} → ${c.projA.toFixed(1)} · proj ${c.totalProj.toFixed(1)}${c.odds != null ? ` · ${fmtAm(c.odds)}` : ""}`, c.need <= 0 ? "" : "dim"));
-  } else if (m.pregameProj?.corners) { const pc = m.pregameProj.corners; tiles.push(tile(pc.total.toFixed(1), `O${pc.line} ${Math.round(pc.pOver * 100)}%`, `Corners projected · ${homeAb} ${pc.home.toFixed(1)} · ${awayAb} ${pc.away.toFixed(1)}${pc.odds != null ? ` · ${fmtAm(pc.odds)}` : ""}`, "dim")); }
+    if (c.settled) tiles.push(tile(String(c.total), `over ${c.line} ${c.over ? "✓" : "✗"}`, `Corners · ${homeAb} ${c.home} · ${awayAb} ${c.away} · display only`, c.over ? "" : "neg"));
+    else tiles.push(tile(`${c.home + c.away} corners`, c.need <= 0 ? `over ${c.line} ✓` : `over ${c.line} · ${Math.round(c.pOver * 100)}%`, `${homeAb} ${c.home} → ${c.projH.toFixed(1)} · ${awayAb} ${c.away} → ${c.projA.toFixed(1)} · ${c.totalProj.toFixed(1)} projected by full time${c.odds != null ? ` · ${fmtAm(c.odds)}` : ""}`, c.need <= 0 ? "" : "dim"));
+  } else if (m.pregameProj?.corners) { const pc = m.pregameProj.corners; tiles.push(tile(pc.total.toFixed(1), `over ${pc.line} · ${Math.round(pc.pOver * 100)}%`, `Corners projected · ${homeAb} ${pc.home.toFixed(1)} · ${awayAb} ${pc.away.toFixed(1)}${pc.odds != null ? ` · ${fmtAm(pc.odds)}` : ""}`, "dim")); }
   if (m.conditions) {
     const cd = m.conditions;
     const rest = `${homeAb} ${cd.home.restDays != null ? `${cd.home.restDays}d` : "—"} · ${awayAb} ${cd.away.restDays != null ? `${cd.away.restDays}d` : "—"}`;
