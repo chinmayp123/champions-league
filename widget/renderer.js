@@ -1317,6 +1317,7 @@ function legVerdict(l) {
   const e = l.rawEdge ?? l.edge ?? 0, ec = l.edge ?? 0;
   const eTxt = `${e >= 0 ? "+" : ""}${Math.round(e * 100)}% vs book${l.edge != null && Math.abs(l.edge - e) > 0.005 ? ` · ${ec >= 0 ? "+" : ""}${(ec * 100).toFixed(1)}% claimed` : ""}`;
   if (l.fair) return { cls: "v-pass", v: `Model line · ${pct}%`, sub: "no book price" };
+  if (l.guard) return { cls: "v-pass", v: `Guarded · ${pct}%`, sub: l.guard };
   if (l.fadePublic) return { cls: "v-sharp", v: `Sharps fading · ${pct}%`, sub: eTxt };
   if (l.coherent === false) return { cls: "v-pass", v: `Vs script · ${pct}%`, sub: eTxt };
   if (e >= 0.03 && e < 0.07) return { cls: "v-bet", v: `Bet · ${pct}%`, sub: `${eTxt} · in band` };

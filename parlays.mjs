@@ -39,6 +39,15 @@ const MAX_EDGE = 0.05;
 // a Draw is allowed back into the card (even when it isn't the predicted result) only if its raw
 // edge clears this — i.e. a real value draw, not every coin-flip. Must still pass the band above.
 const DRAW_MIN_EDGE = 0.05;
+// two guards learned from the first UCL card (2026-09-09):
+//  · LONGEST_PRICE — never bet a leg longer than +400 (dec 5.0). Long shots are where the
+//    favourite–longshot bias lives and where a Poisson tail masquerades as an edge.
+//  · MARKET_GAP — pre-match the model is BUILT from the market (prices → goal rates → Poisson),
+//    and a Poisson can't represent a heavy favourite (Barcelona -1500 came back as 74/14/12 vs
+//    the market's 90/7/3). When the rebuilt 1X2 sits more than 8 points from the de-vigged
+//    market on any side, every leg of that game is a modelling artefact, not information: skip.
+const LONGEST_PRICE = 5.0;
+const MARKET_GAP = 0.08;
 
 // candidate legs for one event: each { game, market, pick, modelProb, ml, dec, impl, edge }
 async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
@@ -57,6 +66,17 @@ async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
   const pred = scorePrediction(ev, sum, null, null, priors?.xgPrior, conditions?.tilt, goalsBias);
   const fd = publicBetting?.fanduel;
   if (!pred || !fd) return null;
+  // market-consistency guard (see MARKET_GAP): compare the model's 1X2 to the de-vigged book
+  let guard = null;
+  {
+    const raw = [fd.home?.ml, fd.draw?.ml, fd.away?.ml].map((ml) => { const d = amToDec(ml); return d ? 1 / d : null; });
+    if (raw.every((x) => x != null)) {
+      const sum1 = raw[0] + raw[1] + raw[2];
+      const mkt = raw.map((x) => x / sum1);
+      const gap = Math.max(Math.abs(pred.wH - mkt[0]), Math.abs(pred.wD - mkt[1]), Math.abs(pred.wA - mkt[2]));
+      if (gap > MARKET_GAP) guard = `model ${Math.round(gap * 100)} pts off the market — can't represent this price, skipped`;
+    }
+  }
 
   // the model's central prediction, used to tag each leg as coherent (agrees with the predicted
   // game script) or not. We never bet against our own prediction: no underdog ML, no Over when
@@ -98,7 +118,9 @@ async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
     const honest = market === "Moneyline" || market === "DNB";
     const trusted = honest ? rawEdge : rawEdge * trust;
     const edge = Math.sign(trusted) * Math.min(Math.abs(trusted), MAX_EDGE); // capped, for EV/Kelly only
-    cands.push({ id: ev.id, game, market, pick, group, modelProb: impl + edge, ml, dec, impl, edge, rawEdge, coherent, fadePublic: fade });
+    const tooLong = dec > LONGEST_PRICE;
+    cands.push({ id: ev.id, game, market, pick, group, modelProb: impl + edge, ml, dec, impl, edge, rawEdge, coherent, fadePublic: fade,
+      guard: guard || (tooLong ? `longer than +${Math.round((LONGEST_PRICE - 1) * 100)} — long shots are never bet` : null) });
   };
   // a scorer candidate: priced at FanDuel's REAL anytime ML when the book posts one, else the
   // model's own FAIR price (dec = 1/scoreProb, edge 0, flagged `fair`). The fair case carries no
@@ -219,14 +241,26 @@ async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
         return p;
       };
       const fmtH = (v) => (v > 0 ? `+${v}` : `${v}`);
+      // a ±0.5 handicap IS the moneyline: a line-shop price that beats FanDuel's ML on the same
+      // outcome by more than a few cents is a stale line, not an edge (today's "ARS -0.5 at -125"
+      // vs FanDuel Arsenal -165). Such legs stay on the menu but carry a guard.
+      const impl = (ml) => { const d = amToDec(ml); return d ? 1 / d : null; };
+      const stale = (spreadMl, fdMl) => { const a = impl(spreadMl), b = impl(fdMl); return a != null && b != null && b - a > 0.04; };
       for (const s of ex.spreads || []) {
         const pCover = pMarginGT(-s.hcap);
         const cohH = h.team.abbreviation === mlFav || (mlFav === "Draw" && s.hcap > 0);
         const cohA = a.team.abbreviation === mlFav || (mlFav === "Draw" && s.hcap < 0);
-        if (s.home != null)
+        const half = Math.abs(s.hcap) === 0.5;
+        if (s.home != null) {
+          const n = cands.length;
           pushLeg("Spread", `${h.team.abbreviation} ${fmtH(s.hcap)}`, pCover, s.home, "Spread", cohH, fadePublic(h.team.abbreviation));
-        if (s.away != null)
+          if (cands.length > n && half && s.hcap < 0 && stale(s.home, fd.home?.ml)) cands[n].guard = cands[n].guard || "line-shop price beats FanDuel's moneyline on the same outcome — stale line";
+        }
+        if (s.away != null) {
+          const n = cands.length;
           pushLeg("Spread", `${a.team.abbreviation} ${fmtH(-s.hcap)}`, 1 - pCover, s.away, "Spread", cohA, fadePublic(a.team.abbreviation));
+          if (cands.length > n && half && s.hcap > 0 && stale(s.away, fd.away?.ml)) cands[n].guard = cands[n].guard || "line-shop price beats FanDuel's moneyline on the same outcome — stale line";
+        }
       }
     }
   } catch { /* no extra markets posted — fine */ }
@@ -241,7 +275,7 @@ async function matchLegs(ev, goalsBias = 1, trust = 0.5) {
 // (Under went 1/6, −$37), and the projection rests on 1–2 games of form. They stay in the
 // candidates so the builder menu still prices them; re-evaluate if projAccuracy tightens up.
 function bettable(l) {
-  return l.market !== "Corners" && l.coherent && !l.fadePublic && l.rawEdge >= EDGE_MIN && l.rawEdge < EDGE_MAX;
+  return l.market !== "Corners" && !l.guard && l.coherent && !l.fadePublic && l.rawEdge >= EDGE_MIN && l.rawEdge < EDGE_MAX;
 }
 
 // correlation guard: at most TWO singles per game, and never a correlated pair. Markets sort
@@ -400,7 +434,7 @@ export async function parlayMenu(events = null) {
         id: l.id, game: l.game, market: l.market, pick: l.pick, group: l.group,
         modelProb: l.modelProb, ml: l.ml, dec: l.dec, impl: l.impl,
         edge: l.edge, rawEdge: l.rawEdge, coherent: l.coherent, fadePublic: l.fadePublic,
-        fair: l.fair || false, why: legReason(l),
+        fair: l.fair || false, guard: l.guard || null, why: legReason(l),
       })),
     });
   }
