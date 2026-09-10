@@ -10,16 +10,18 @@ Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'worldcup-t
 Start-Sleep -Seconds 3
 Rename-Item -LiteralPath $old -NewName "champions-league" -ErrorAction Stop
 Write-Host "folder renamed"
-$desktop = [Environment]::GetFolderPath('Desktop')
+$apps = "C:\Users\chinm\OneDrive\Desktop\Apps"   # where every app shortcut lives
+New-Item -ItemType Directory -Force -Path $apps | Out-Null
+Remove-Item -LiteralPath "$([Environment]::GetFolderPath('Desktop'))\Starball Lab.lnk" -Force -ErrorAction SilentlyContinue
 $ws = New-Object -ComObject WScript.Shell
-$lnk = $ws.CreateShortcut("$desktop\Starball Lab.lnk")
+$lnk = $ws.CreateShortcut("$apps\Starball Lab.lnk")
 $lnk.TargetPath = "$new\node_modules\electron\dist\electron.exe"
 $lnk.Arguments = "`"$new\widget\main.cjs`""
 $lnk.WorkingDirectory = $new
 $lnk.IconLocation = "$new\widget\icon.ico,0"
 $lnk.Description = "Starball Lab — Champions League widget"
 $lnk.Save()
-Write-Host "desktop shortcut recreated"
+Write-Host "shortcut written to Desktop\Apps"
 schtasks /Change /TN "WorldCup Morning Parlays" /TR "wscript.exe `"$new\run-morning.vbs`"" | Out-Null
 Write-Host "morning task repointed"
 Start-Process -FilePath "$new\node_modules\electron\dist\electron.exe" -ArgumentList "`"$new\widget\main.cjs`"" -WorkingDirectory $new
