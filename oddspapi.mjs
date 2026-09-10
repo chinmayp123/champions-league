@@ -1,4 +1,4 @@
-// oddspapi — Corners (O/U) and Both-Teams-To-Score markets for World Cup games via the OddsPapi
+// oddspapi — Corners (O/U) and Both-Teams-To-Score markets for the active competition via the OddsPapi
 // API (free tier, multi-book). FanDuel's public API is flaky to reach; OddsPapi reliably carries
 // these for WC fixtures, so we use it as the PRIMARY source for corner + BTTS legs (FanDuel's
 // public API stays a fallback). One odds-by-tournaments call covers every game, so it's light on

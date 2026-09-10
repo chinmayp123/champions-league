@@ -114,4 +114,4 @@ Your key is never committed: `odds.config.json` and `.env` are in `.gitignore`.
 
 ## Data source
 
-ESPN's public scoreboard and summary endpoints for `soccer/fifa.world` (scores, stats, standings, events) — unofficial, unauthenticated, rate-limit friendly at the default 30s refresh. Live odds come from The Odds API when a key is provided.
+ESPN's public scoreboard and summary endpoints for the active competition (`competition.mjs`) (scores, stats, standings, events) — unofficial, unauthenticated, rate-limit friendly at the default 30s refresh. Live odds come from The Odds API when a key is provided.

@@ -1,4 +1,4 @@
-// actionnetwork — free public-betting splits (tickets % vs money %) for World Cup matches.
+// actionnetwork — free public-betting splits (tickets % vs money %) for the active competition.
 //
 // Action Network's web API (api.actionnetwork.com) returns per-outcome public-betting data
 // for soccer without auth or a paywall. We read the soccer scoreboard, map a match by team

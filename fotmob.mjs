@@ -1,4 +1,4 @@
-// fotmob — free xG / shot-level + match data for World Cup matches.
+// fotmob — free xG / shot-level + match data for the active competition.
 //
 // FotMob is a Next.js app. Its /api/* endpoints are gated behind a rotating signed
 // `x-mas` header, but the public pages embed the same server-rendered data in a

@@ -17,7 +17,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { fotmobXG } from "./fotmob.mjs";
 
-const BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world";
+import { COMP } from "./competition.mjs";
+const BASE = `https://site.api.espn.com/apis/site/v2/sports/soccer/${COMP.espn}`;
 
 // Optional live-odds key (The Odds API). Read from env or a gitignored config
 // file next to this script — never hard-coded, so the public repo stays clean.
@@ -32,7 +33,7 @@ function loadOddsKey() {
   }
 }
 const ODDS_KEY = loadOddsKey();
-const ODDS_BASE = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds";
+const ODDS_BASE = `https://api.the-odds-api.com/v4/sports/${COMP.oddsApiSport}/odds`;
 
 const C = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -164,7 +165,7 @@ function scorePrediction(ev, sum, liveOdds, realXG = null) {
   if (state === "post") return null; // match over — show the real score, not a guess
   const minute = matchMinute(st);
   const hScore = Number(home.score) || 0, aScore = Number(away.score) || 0;
-  const FT = 95, AVG_TEAM = 1.35; // ~World Cup expected goals per team per match
+  const FT = 95, AVG_TEAM = 1.35; // ~expected goals per team per match
   const n = (v) => parseFloat(v) || 0;
 
   const teams = sum.boxscore?.teams || [];
@@ -293,7 +294,7 @@ async function listMatches({ days = 3 } = {}) {
     for (const ev of b.events || [])
       if (!seen.has(ev.id)) { seen.add(ev.id); events.push(ev); }
   events.sort((a, b) => new Date(a.date) - new Date(b.date));
-  if (!events.length) return console.log("No World Cup matches scheduled.");
+  if (!events.length) return console.log(`No ${COMP.name} matches scheduled.`);
 
   // odds aren't attached at scoreboard level, so fetch them per upcoming game (capped, in parallel)
   const upcoming = events.filter((e) => e.competitions[0].status.type.state === "pre").slice(0, 14);
@@ -316,7 +317,7 @@ async function listMatches({ days = 3 } = {}) {
   return events;
 }
 
-const allStandings = () => getJSON(`https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings`);
+const allStandings = () => getJSON(`https://site.api.espn.com/apis/v2/sports/soccer/${COMP.espn}/standings`);
 
 // render one group's table; `highlight` is a set of team names to emphasize
 function renderGroupTable(name, entries, highlight = new Set()) {

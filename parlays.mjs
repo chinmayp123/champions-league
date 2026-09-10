@@ -18,6 +18,7 @@
 // picked the biggest model errors first). MAX_EDGE now only shrinks the prob used for EV/Kelly.
 
 import { scoreboardOn, ymd, summary, scorePrediction, pregameProjections, matchConditions, poissonCdf } from "./lib.mjs";
+import { COMP } from "./competition.mjs";
 import { fotmobXG, fotmobPlayerSOT } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelCorners, fanduelBTTS, fanduelProps } from "./fanduel.mjs";
@@ -491,7 +492,7 @@ export function formatParlays(out) {
       `    model ${pct(p.modelProb)} to hit | model EV ${p.ev >= 0 ? "+" : ""}$${p.ev.toFixed(2)} | ${k}`,
     ].join("\n");
   };
-  const lines = [`World Cup singles | ${out.date} | $${out.stake} each`, ""];
+  const lines = [`${COMP.name} singles | ${out.date} | $${out.stake} each`, ""];
   if (!out.singles.length) lines.push("(no qualifying single-leg bets on this slate)", "");
   for (const g of out.singles) lines.push(betBlock(`> ${g.game}`, g.bet), "");
   if (out.longshot) lines.push("--- for fun (not tracked) ---", "", betBlock("> LONGSHOT (one leg per game, max payout)", out.longshot));

@@ -1397,7 +1397,7 @@ function renderBuilder(data) {
     h("div", { class: "facts" }, facts),
   ], hc);
   setTicker([
-    { text: "Derived markets ran 15pts overconfident at the World Cup · edges shrunk by learned trust", cls: "warn" },
+    { text: "Derived markets ran 15pts overconfident last tournament · edges shrunk by learned trust", cls: "warn" },
     { text: "Two-axis guard: one result leg + one goals leg per game, never two from one axis" },
     { text: "Corners benched from the card · scorers display only", cls: "warn" },
     { text: SRC_LINE, cls: "src" },

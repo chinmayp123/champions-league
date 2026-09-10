@@ -1,4 +1,4 @@
-// lib — shared data + model layer for the World Cup tracker.
+// lib — shared data + model layer for the Champions League tracker (Starball Lab).
 // Both the CLI (cli.mjs) and the desktop widget (widget/) import from here, so the
 // fetching, odds, predictions, keeper-saves model, and betting reads live in ONE place.
 // Everything here returns plain data — no terminal ANSI, no DOM — so any front end can use it.
@@ -325,7 +325,7 @@ export function impliedFromOdds(sum, liveOdds) {
   return null;
 }
 
-// --- WC2026 venue conditions (host stadiums): altitude (m) + a heat-risk index (0 mild → 3
+// --- venue conditions (World Cup 2026 host stadiums; clubs get nothing here): altitude (m) + a heat-risk index (0 mild → 3
 // extreme), allowing for air-conditioned/retractable roofs. Matched loosely by name/city. ---
 const VENUES = [
   { k: /lumen|seattle/i, alt: 5, heat: 0 },
@@ -445,7 +445,7 @@ export function scorePrediction(ev, sum, liveOdds, realXG = null, priors = null,
     }
   }
 
-  // WC2026 conditions tilt (altitude/heat/rest fatigue) — small, capped
+  // conditions tilt (altitude/heat/rest fatigue) — small, capped
   if (cond && cond.home && cond.away) { remLamH *= cond.home; remLamA *= cond.away; }
   const expH = hScore + remLamH, expA = aScore + remLamA;
   const [wH, wD, wA] = outcomeProbs(remLamH, remLamA, hScore, aScore);
