@@ -1,4 +1,4 @@
-# worldcup-tracker
+# champions-league
 
 > **Now pointed at the 2026-27 UEFA Champions League.** The tool was built for the 2026 World Cup;
 > since September 2026 it runs the Champions League instead. Every competition-specific id (ESPN,
@@ -7,7 +7,7 @@
 > `"competition": "wc"` in `odds.config.json` (or `COMPETITION=wc`). Each competition keeps its
 > own bet log under `bets/`, so calibrations never bleed across tournaments.
 
-Live FIFA World Cup 2026 match tracker for your terminal. Zero dependencies — just Node 18+ (uses ESPN's public API, no key required).
+Live Champions League match tracker: a desktop widget (Starball Lab) and a terminal CLI. Zero dependencies — just Node 18+ (uses ESPN's public API, no key required).
 
 ```
   Canada  1 - 0  Bosnia-Herzegovina    ● LIVE  37'
@@ -72,12 +72,12 @@ corners, lower-third + crawl) re-skinned to Champions League navy — the "Starb
 ## CLI usage
 
 ```sh
-node worldcup.mjs              # auto-track the live game (or list today's matches)
-node worldcup.mjs list         # upcoming schedule (today + next 2 days) with odds
-node worldcup.mjs groups       # all 12 group standings tables
-node worldcup.mjs canada       # track a match by team name, abbreviation, or event id
-node worldcup.mjs usa --once   # single snapshot, no refresh loop
-node worldcup.mjs usa -i 15    # refresh every 15 seconds (default 30, min 10)
+node cli.mjs                  # auto-track the live game (or list today's matches)
+node cli.mjs list             # upcoming schedule (today + next 2 days) with odds
+node cli.mjs groups           # the league table
+node cli.mjs canada           # track a match by team name, abbreviation, or event id
+node cli.mjs usa --once       # single snapshot, no refresh loop
+node cli.mjs usa -i 15        # refresh every 15 seconds (default 30, min 10)
 ```
 
 While tracking, the screen refreshes in place with the live score, match clock, possession bar, full stat comparison (shots, corners, fouls, cards, passes, tackles, and more), and a timeline of goals, cards, and substitutions. Tracking stops automatically at full time.

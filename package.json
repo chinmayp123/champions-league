@@ -4,10 +4,10 @@
   "description": "Starball Lab \u2014 Champions League match tracker + betting harness (desktop widget)",
   "type": "module",
   "bin": {
-    "worldcup": "./worldcup.mjs"
+    "champions-league": "./cli.mjs"
   },
   "scripts": {
-    "start": "node worldcup.mjs",
+    "start": "node cli.mjs",
     "widget": "electron widget/main.cjs",
     "dist": "electron-builder --win"
   },
@@ -35,7 +35,7 @@
       "package.json",
       "!widget/make-icon.mjs",
       "!morning.mjs",
-      "!worldcup.mjs",
+      "!cli.mjs",
       "!dryrun.mjs"
     ],
     "win": {

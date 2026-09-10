@@ -1,5 +1,5 @@
 // lib — shared data + model layer for the World Cup tracker.
-// Both the CLI (worldcup.mjs) and the desktop widget (widget/) import from here, so the
+// Both the CLI (cli.mjs) and the desktop widget (widget/) import from here, so the
 // fetching, odds, predictions, keeper-saves model, and betting reads live in ONE place.
 // Everything here returns plain data — no terminal ANSI, no DOM — so any front end can use it.
 
@@ -26,7 +26,7 @@ function loadOddsKey() {
 export const ODDS_KEY = loadOddsKey();
 
 export async function getJSON(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "worldcup-cli" } });
+  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
@@ -66,7 +66,7 @@ export async function fetchOddsEvents() {
   const now = Date.now();
   if (_oddsCache.events && now - _oddsCache.at < 120000) return _oddsCache.events;
   const url = `${ODDS_BASE}/?apiKey=${ODDS_KEY}&regions=us&markets=h2h,totals&oddsFormat=american`;
-  const res = await fetch(url, { headers: { "User-Agent": "worldcup-cli" } });
+  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
   if (!res.ok) throw new Error(`Odds API HTTP ${res.status}`);
   _oddsCache = { at: now, events: await res.json() };
   oddsState.remaining = res.headers.get("x-requests-remaining");
@@ -158,7 +158,7 @@ export async function fetchPlayerProps(oddsEventId) {
   const hit = _propCache.get(oddsEventId);
   if (hit && now - hit.at < 120000) return hit.data;
   const url = `${SPORT_BASE}/events/${oddsEventId}/odds?apiKey=${ODDS_KEY}&regions=us&markets=${PROP_MARKETS}&oddsFormat=american`;
-  const res = await fetch(url, { headers: { "User-Agent": "worldcup-cli" } });
+  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
   if (!res.ok) throw new Error(`Odds API props HTTP ${res.status}`);
   oddsState.remaining = res.headers.get("x-requests-remaining");
   const data = parsePlayerProps(await res.json());

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// worldcup — live FIFA World Cup 2026 match tracker (ESPN public API, no key needed)
+// cli — live Champions League match tracker in the terminal (ESPN public API, no key needed)
 //
-//   node worldcup.mjs                 auto-track the live game (or list if several)
-//   node worldcup.mjs list            show today's matches
-//   node worldcup.mjs canada          track a match by team name (or event id)
-//   node worldcup.mjs usa --once      single snapshot, no refresh loop
-//   node worldcup.mjs usa -i 15       refresh every 15s (default 30)
-//   node worldcup.mjs groups          all 12 group tables
+//   node cli.mjs                 auto-track the live game (or list if several)
+//   node cli.mjs list            show today's matches
+//   node cli.mjs canada          track a match by team name (or event id)
+//   node cli.mjs usa --once      single snapshot, no refresh loop
+//   node cli.mjs usa -i 15       refresh every 15s (default 30)
+//   node cli.mjs groups          all 12 group tables
 //
 // Optional live odds (FanDuel + line shopping): set an ODDS_API_KEY env var, or
 // put {"oddsApiKey":"..."} in odds.config.json (gitignored). Without a key it
@@ -42,7 +42,7 @@ const C = {
 const c = (color, s) => `${C[color]}${s}${C.reset}`;
 
 async function getJSON(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "worldcup-cli" } });
+  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
@@ -216,7 +216,7 @@ async function fetchOddsEvents() {
   const now = Date.now();
   if (_oddsCache.events && now - _oddsCache.at < 120000) return _oddsCache.events;
   const url = `${ODDS_BASE}/?apiKey=${ODDS_KEY}&regions=us&markets=h2h&oddsFormat=american`;
-  const res = await fetch(url, { headers: { "User-Agent": "worldcup-cli" } });
+  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
   if (!res.ok) throw new Error(`Odds API HTTP ${res.status}`);
   _oddsCache = {
     at: now,
@@ -312,7 +312,7 @@ async function listMatches({ days = 3 } = {}) {
     if (day !== curDay) { curDay = day; console.log(c("cyan", `  ── ${day} ──`)); }
     console.log(matchLine(ev));
   }
-  console.log(c("dim", "\n  Track one:  node worldcup.mjs <team name or id>\n"));
+  console.log(c("dim", "\n  Track one:  node cli.mjs <team name or id>\n"));
   return events;
 }
 

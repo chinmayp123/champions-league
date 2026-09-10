@@ -13,7 +13,7 @@ import { COMP, readConfig } from "./competition.mjs";
 
 const API = "https://api.oddspapi.io/v4";
 const SOCCER = 10, WC = COMP.oddspapiTournamentId; // "WC" = the active competition's tournamentId
-const H = { Accept: "application/json", "User-Agent": "worldcup-tracker" };
+const H = { Accept: "application/json", "User-Agent": "champions-league" };
 
 const cfg = () => readConfig();
 const KEY = process.env.ODDSPAPI_KEY || cfg().oddspapiKey || null;
