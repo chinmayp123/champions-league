@@ -1413,6 +1413,8 @@ export async function getWidgetState(query) {
     const gb = await import("./betlog.mjs").then((b) => b.goalsBias().factor).catch(() => 1);
     const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions, gb);
     if (isPre && view.prediction) freezePrediction(ev, view.prediction);
+    // the frozen pre-match call rides along so a live or finished game can show what was predicted
+    view.frozen = loadPredStore()[ev.id] || null;
     // league-phase matchday pill (knockout games carry a round tag instead)
     if (!view.round) view.matchday = await fotmobMatchday(homeRef, awayRef, ev.date);
     // formations, per-player ratings and the shot map for the pitch card (pre-match too — the

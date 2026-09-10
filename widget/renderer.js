@@ -673,6 +673,23 @@ function renderMatch(m) {
     }
   }
 
+  // the pre-match call, frozen before kickoff — shown once the game is on so it can be judged
+  if (m.state !== "pre" && m.frozen && m.frozen.pred) {
+    const f = m.frozen.pred, hs = m.home.score ?? 0, as = m.away.score ?? 0, done = m.state === "post";
+    const call = f.wH >= f.wD && f.wH >= f.wA ? "home" : f.wA >= f.wD ? "away" : "draw";
+    const lead = hs > as ? "home" : as > hs ? "away" : "draw";
+    const mark = (ok) => h("span", { class: `pm ${ok ? "hit" : "miss"}`, text: ok ? " ✓" : " ✗" });
+    const total = hs + as;
+    blocks.push(h("div", { class: "label", text: `Pre-match call · frozen ${new Date(m.frozen.frozenAt).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })} · ${f.basis || "model"}` }));
+    const rows = h("div", { class: "frozen" }, [
+      h("div", { class: "stline" }, [h("span", { class: "l", text: `Score ${f.ph}–${f.pa}` }), h("span", { class: "k", text: done ? "final" : "now" }), h("span", { class: "r" }, [txt(`${hs}–${as}`), done ? mark(f.ph === hs && f.pa === as) : null])]),
+      h("div", { class: "stline" }, [h("span", { class: "l", text: `${call === "home" ? m.home.abbr : call === "away" ? m.away.abbr : "Draw"} ${Math.round(Math.max(f.wH, f.wD, f.wA) * 100)}%` }), h("span", { class: "k", text: done ? "result" : "leading" }), h("span", { class: "r" }, [txt(lead === "home" ? m.home.abbr : lead === "away" ? m.away.abbr : "level"), done ? mark(call === lead) : null])]),
+    ]);
+    if (f.pOver25 != null) rows.appendChild(h("div", { class: "stline" }, [h("span", { class: "l", text: `${f.pOver25 >= 0.5 ? "Over" : "Under"} 2.5 · ${Math.round(f.pOver25 * 100)}%` }), h("span", { class: "k", text: "goals" }), h("span", { class: "r" }, [txt(String(total)), (done || total > 2.5) ? mark((f.pOver25 >= 0.5) === (total > 2.5)) : null])]));
+    if (f.pBTTS != null) rows.appendChild(h("div", { class: "stline" }, [h("span", { class: "l", text: `BTTS ${f.pBTTS >= 0.5 ? "yes" : "no"} · ${Math.round(f.pBTTS * 100)}%` }), h("span", { class: "k", text: "both scored" }), h("span", { class: "r" }, [txt(hs > 0 && as > 0 ? "yes" : "not yet"), (done || (hs > 0 && as > 0)) ? mark((f.pBTTS >= 0.5) === (hs > 0 && as > 0)) : null])]));
+    blocks.push(rows);
+  }
+
   // recommended bets — the compact view's top two (expanded: the sheet's Recommended card)
   if (!expanded && m.state !== "post" && m.recs && m.recs.length) {
     const note = m.dominance ? `${m.dominance.leader} ${m.dominance.pct}% dominance` : m.recsBasis || "";
