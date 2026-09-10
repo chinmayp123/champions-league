@@ -1,0 +1,266 @@
+# Architecture
+
+How the app is put together: the module map, where data comes from, how it reaches the
+screen, and the files it keeps on disk. Read this before changing anything; read
+[MODEL.md](MODEL.md) for the maths and [DATA_SOURCES.md](DATA_SOURCES.md) for the feeds.
+
+Zero runtime dependencies. Node 18+ for the data layer, Electron for the widget shell,
+`electron-builder` (dev-only) for installers. No framework, no bundler, no build step —
+the renderer is plain DOM calls in one file.
+
+---
+
+## The shape of it
+
+```
+   feeds (HTTP, no auth except two optional keys)
+   ESPN · FotMob · Action Network · FanDuel · OddsPapi · The Odds API
+                          │
+                          ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │  data + model layer  (plain ESM, runs in Node)           │
+   │                                                          │
+   │  competition.mjs  which tournament, ids, format rules    │
+   │  teams.mjs        one strict club-name matcher           │
+   │  <feed>.mjs       one module per feed, best-effort       │
+   │  lib.mjs          the model + the view assemblers        │
+   │  parlays.mjs      candidate legs → the daily card        │
+   │  betlog.mjs       bet log, settling, calibration         │
+   └──────────────────────────────────────────────────────────┘
+                          │  plain JSON, no classes
+          ┌───────────────┴───────────────┐
+          ▼                               ▼
+   widget/main.cjs                   morning.mjs / cli.mjs
+   (Electron main: polls,            (scheduled card, terminal
+    owns IPC + tray + window)         tracker — same layer)
+          │  IPC
+          ▼
+   widget/renderer.js  (draws five tabs from that JSON)
+```
+
+**The rule that keeps this simple:** the data layer never touches the DOM and the renderer
+never fetches. Main polls `lib.getWidgetState()`, pushes a JSON blob over IPC, and the
+renderer draws whatever it was handed. Anything the renderer needs must be added to the
+payload in `lib.mjs` first.
+
+---
+
+## Modules
+
+### `competition.mjs` — what tournament this is
+The single source of truth for every competition-specific id and format rule. `COMP` is
+the active entry, chosen by `"competition"` in `odds.config.json` or the `COMPETITION` env
+var (`ucl` default, `wc` kept as the reference the tool was built on).
+
+Each entry carries: the ESPN league slug, The Odds API sport key, the OddsPapi tournament
+id, the FotMob league id + slug, FanDuel's competition id, the league-phase slugs and
+number of matchdays, the qualification `zones`, the knockout round order and labels, the
+knockout date window, whether ties are two-legged, the fixture-pool look-back/ahead, and
+the bet-log directory.
+
+Also here: `DATA_DIR` (where the user's own files live — the repo when run from source,
+Electron's per-user data folder when packaged), `readConfig()` (the one reader of
+`odds.config.json`), `compMeta()` (the plain-data subset the widget shows), and
+`clubLeague()` (a season map of club → domestic league, since no feed carries it).
+
+**Repointing at another competition is a config change, not a code hunt.** If you find
+yourself hardcoding a league id or a round name anywhere else, it belongs here.
+
+### `teams.mjs` — the club-name matcher
+Every feed spells clubs differently. This is the only place that decides whether two names
+are the same club: fold diacritics, canonicalise the handful of disagreements
+(Inter/Internazionale, Bayern Munich/München, PSG, Sporting CP), drop generic tokens (fc,
+sc, club…), then require every distinctive token of the shorter name to appear in the
+longer one.
+
+**An abbreviation only ever matches by exact equality against a feed's own abbreviation
+field.** This is load-bearing: the old per-module matchers accepted any substring, so
+ESPN's `MUN` (Bayern Munich) matched Dort-**mun**-d and `MAN` (Manchester United) matched
+**Man**chester City, and the wrong players, form and prices flowed into those games for a
+day. Never reintroduce a substring test on names.
+
+### Feed modules — one per source, all best-effort
+`espn` lives in `lib.mjs` (it's the backbone); the rest are separate:
+
+| Module | Provides | Key | Failure mode |
+|---|---|---|---|
+| `fotmob.mjs` | shot-level xG, xGOT, big chances, momentum, lineups + pitch coordinates, player ratings, per-player shot maps, recent form across all competitions | none | returns `null`, caller falls back |
+| `actionnetwork.mjs` | FanDuel moneyline/spread/total, public betting tickets % vs money % | none | returns `null` |
+| `fanduel.mjs` | corners O/U, BTTS, anytime-scorer and shots-on-target prices | none | returns `null` |
+| `oddspapi.mjs` | best price across books for corners, BTTS, DNB, team totals, Asian handicaps | optional | returns `null` |
+| The Odds API (in `lib.mjs`) | multi-book moneyline + player props | optional | falls back to Action Network |
+
+Every one of them swallows its own errors and returns `null`. **A dead feed must never
+break a view** — it degrades. FotMob and FanDuel are unofficial endpoints read from public
+pages; treat them as liable to change shape without notice.
+
+### `lib.mjs` — the model and the view assemblers
+The big one (~1500 lines). Three layers inside it:
+
+1. **Fetch + cache helpers** — `scoreboard*`, `summary`, `allStandings`, `fetchOddsEvents`
+   (quota-aware, TTL by game state: 30 min pre, 5 min live, 6 h final), `fixturePool`
+   (one ranged ESPN call covering `lookBackDays` → `lookAheadDays`).
+2. **The model** — `scorePrediction`, `bettingModel`, `outcomeProbs`, `cornersModel`,
+   `keeperSaveLine`, `pregameProjections`, `matchConditions`, `centreLine`. See
+   [MODEL.md](MODEL.md).
+3. **View assemblers** — the functions the widget actually calls, each returning plain JSON:
+
+| Function | Feeds | Used by |
+|---|---|---|
+| `getWidgetState(query)` | everything for one tracked match | every poll |
+| `listMatchesData()` | the slate: one row per game with a market prediction | Matchday, search, table |
+| `getStandings()` | league table with zones, or the folded knockout bracket | Table |
+| `getDailyParlays()` | the morning card (cached 30 min) | Matchday |
+| `getParlayMenu()` | every priced candidate leg per game (cached 30 min) | Builder |
+| `getRecord()` | bet log + calibration + graded predictions (cached 5 min) | Record |
+| `trackParlay(payload)` | logs a user-built slip | Builder |
+| `captureClosing()` | snapshots closing prices for CLV | every poll |
+
+Also here: the **predictions store** (`freezePrediction`, `gradePredictions`) — the
+model's own scorecard, described below.
+
+### `parlays.mjs` — candidate legs → the card
+`matchLegs(ev)` prices every market it can find for one game into candidate legs, each
+carrying `{market, pick, ml, dec, impl, modelProb, edge, rawEdge, coherent, fadePublic,
+guard, why}`. Then:
+
+- `bettable(l)` is the gate: not corners, not scorers, no `guard`, agrees with the model's
+  own predicted script, not a side sharp money is fading, and `rawEdge` inside the band.
+- `bestSingles(cands)` takes at most one leg per **axis** (result: ML/DNB/spread; goals:
+  total/team total/BTTS) so the card never double-stakes one opinion.
+- `generateDailyParlays()` returns the tracked singles, an untracked cross-game longshot,
+  and `notes` — one line per game saying why it did or didn't qualify, so an empty card
+  still explains itself.
+- `parlayMenu()` returns every candidate (guards included) for the Builder board.
+
+### `betlog.mjs` — the bet record and the two learned dials
+Appends the card to `log.json`, settles finished legs from the box score, and computes the
+stats the Record tab shows. Two values feed back into the model:
+
+- `goalsBias()` — scales goal expectation, learned from settled totals.
+- `edgeTrust()` — how much of a claimed edge on a *derived* market is believed, learned by
+  regressing outcomes on claimed edges. Clamped to `[0.2, 1]`.
+
+`captureClosing()` snapshots the price near kickoff so closing-line value can be computed
+later. CLV is the honest measure of edge; results take months.
+
+### `widget/` — the shell
+- **`main.cjs`** (Electron main): names the app and takes its own `userData` folder (so the
+  single-instance lock and window state don't collide with other Electron projects),
+  single-instance, polls every 30 s (120 s at halftime, 60 s when nothing is live), pushes
+  `update` and `config` over IPC, owns the tray, Windows Controls Overlay (so Snap Layouts
+  works), goal/full-time toasts, and the compact ↔ expanded presets (300×400 / 1180×920).
+- **`preload.cjs`**: the whole bridge, 13 channels — `onUpdate`, `onConfig`, `setMatch`,
+  `getParlays`, `getParlayMenu`, `trackParlay`, `getRecord`, `getStandings`,
+  `toggleExpand`, `togglePin`, `refresh`, `hide`, `quit`. Context-isolated, no Node in the
+  renderer.
+- **`renderer.js`** (~1850 lines): five tabs, all drawn with `createElement` +
+  `textContent`. **No `innerHTML` with feed strings, ever** — the CSP forbids inline script
+  and the data is third-party.
+- **`style.css`**: the Broadcast design system. See [DESIGN.md](DESIGN.md).
+- **`make-icon.mjs`**: rasterises the starball into `icon.ico/png` and the tray PNGs with
+  no image library (analytic SVG geometry → RGBA → PNG via `node:zlib`).
+
+### `cli.mjs`, `morning.mjs`
+`cli.mjs` is the terminal tracker (same data layer, ANSI output). `morning.mjs` is what the
+scheduled task runs at 10:00: build the card, record it, settle yesterday, write
+`latest.txt`.
+
+---
+
+## Render pipeline (the part that surprises people)
+
+`renderer.js` keeps one `last` payload and redraws from scratch on every push. `render()`
+dispatches on `viewMode` (`matchday`/`match`/`builder`/`standings`/`record`).
+
+The **match view** is assembled as a flat array of `blocks`, then laid out:
+
+1. Sections are delimited by `.label` nodes — everything between one label and the next
+   becomes one card.
+2. `flushCards(blocks, late)` splits them: nodes before the first label are the header
+   (stat strip, pitch, sheet), labelled sections flow into two balanced columns,
+   `.label.full` sections span full width, `late` nodes go under the columns, the
+   disclaimer last.
+3. **Order changes with game state.** Before kickoff the pitch has no shots to plot, so the
+   pitch and match sheet move into `late` and the model's read leads. Once the game is on,
+   the pitch leads again.
+
+Compact mode renders the same blocks and hides most with CSS. If you add a section, decide
+what compact does with it.
+
+---
+
+## Files on disk
+
+Under `DATA_DIR` (repo when run from source, per-user app data when installed):
+
+| File | What |
+|---|---|
+| `odds.config.json` | **gitignored.** Optional API keys + `"competition"`. Never commit. |
+| `bets/<competition>/log.json` | the bet record: days → parlays → legs, with results and closing prices |
+| `bets/<competition>/predictions.json` | the model scorecard (below) |
+| `bets/<competition>/pregame.json` | pre-match projection snapshots, graded against final box scores |
+| `bets/<competition>/latest.txt` | the morning card as plain text |
+
+Each competition keeps its own folder, so calibrations never bleed across tournaments.
+
+### The predictions store — how the model gets judged
+`predictions.json` is one entry per event:
+
+```jsonc
+{
+  "<espnEventId>": {
+    "game": "MUN v BODO", "date": "…", "homeAbbr": "MUN", "awayAbbr": "BODO",
+    "pred": { "ph": 2, "pa": 1, "wH": .74, "wD": .14, "wA": .12,
+              "pOver25": .83, "pBTTS": .70, "basis": "market + form" },
+    "scorers": { "home": [{ "name": "Luis Díaz", "p": .48, "scored": true }], "away": [] },
+    "frozenAt": 1757…, "actual": { "h": 3, "a": 1 }, "graded": true
+  }
+}
+```
+
+**First freeze wins.** The first pre-match sight of a game locks the call so a later refresh
+can't quietly revise it; subsequent calls may only *fill in* fields the first one lacked
+(the slate's market call has no totals or scorers, the fuller match-view call does).
+`gradePredictions()` grades finished games from the box score, and scorers from the
+finished game's shot map. This file is the training set for the engine rewrite — treat it
+as append-only data, never regenerate it wholesale.
+
+---
+
+## Invariants
+
+Break these and something silently rots:
+
+1. **Data layer never touches the DOM; renderer never fetches.** New data goes into the
+   `getWidgetState` payload first.
+2. **Every feed call is best-effort.** Wrap it, return `null`, let the caller degrade.
+3. **All club-name matching goes through `teams.mjs`.** No substring tests on names.
+4. **No `innerHTML` with feed data** in the renderer.
+5. **Competition specifics live in `competition.mjs`.**
+6. **Frozen predictions are immutable.** Fill missing fields only.
+7. **The card is paper.** Nothing in the pick path should imply proven edge before CLV
+   says so — see the honest-bar section in MODEL.md.
+8. **API quotas are shared** with another project. The Odds API free tier is 500
+   req/month and OddsPapi 250; the morning card must never call them per-game in a loop.
+
+---
+
+## Working on it
+
+```sh
+npm install            # first time
+npm run widget         # launch the widget from source
+node cli.mjs           # terminal tracker
+node morning.mjs       # build + record today's card (what the scheduler runs)
+npm run dist           # Windows installer into dist/
+node --check <file>    # the whole test suite, honestly
+```
+
+There is **no test framework**. Verification is `node --check`, one-off `node -e` scripts
+against the live feeds, and for the widget a Playwright `_electron` launch with
+`--user-data-dir` pointed at a scratch folder (so it doesn't fight the running copy's
+single-instance lock). If you add tests, that's a welcome change; don't let their absence
+stop you checking behaviour against real data before committing.
+
+**Don't restart the user's running widget** to test a change. Say it needs a restart.

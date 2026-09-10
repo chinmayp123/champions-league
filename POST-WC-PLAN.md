@@ -3,6 +3,14 @@
 Written 2026-07-22, after the 2026 World Cup finished. This is the honest end-of-tournament
 autopsy of the parlay/betting model and where it goes next.
 
+> **Historical document — kept as the record of why the model is cautious.** The findings
+> here (negative skill against the market, overconfident derived markets, corners benched)
+> are the reason for the edge band, the learned `edgeTrust` shrink, the three guards and the
+> paper-only stance in the live app. What was "Track B" below — a Dixon–Coles engine fitted
+> on club history — is still the plan, and `bets/*/predictions.json` is now collecting the
+> training data for it. For how the app works today see [ARCHITECTURE.md](ARCHITECTURE.md),
+> [MODEL.md](MODEL.md) and [AGENTS.md](AGENTS.md).
+
 ---
 
 ## 1. The final record (102 legs settled)

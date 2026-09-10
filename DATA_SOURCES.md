@@ -1,86 +1,138 @@
-# Data sources — research notes (for better picks)
+# Data sources
 
-Goal: get the data points that make picks genuinely useful — real **lineups**, **xG**,
-**player props** (scorer, shots on target, saves), and **corners/cards** — beyond what the
-current free stack provides.
+Every feed the app reads, what it provides, what it costs, and how it fails. All of them are
+wrapped so a failure returns `null` and the caller degrades — see the best-effort rule in
+[AGENTS.md](AGENTS.md).
 
-## What we use today
-- **ESPN public API** (free, no key) — scores, team box-score stats (incl. **corners per
-  side**), keeper stats, standings, play-by-play events. *No player xG, no shot-level data.*
-- **FotMob** (free, no key — `fotmob.mjs`) — **real shot-level xG** (team + per-player) for
-  every WC match, read from the site's Next.js `__NEXT_DATA__` SSR payload. Feeds true xG
-  into the score-prediction + betting models, replacing the old shot proxy. Unofficial, so
-  it's best-effort: any failure falls back to the proxy silently. See note below.
-- **The Odds API** (key in `odds.config.json`) — moneyline + totals across US books, and
-  **anytime-scorer / shots-on-target player props** per event. *No saves or corners markets
-  for soccer.* Free tier = 500 requests/month, and the key is SHARED with Pick Six. The widget is the only
-  spender (the morning card never calls it): events list 2 credits + tracked game props 2, cached 30 min
-  pre-match, 5 min in play, never again once final; an exhausted key is remembered for the process.
-- **FanDuel public sportsbook API** (free, no login — `fanduel.mjs`) — the same JSON FanDuel's
-  own website fetches with a public app key (`_ak`). We use it for **total match corners**
-  over/under (a real corner market the other feeds lack) and, as a **fallback for player props**
-  (anytime scorer + shots on target) when The Odds API is unavailable. Single-book, so props
-  here are **display-only** — no cross-book consensus to de-vig against, so no honest edge (see
-  gaps). Read `/api/event-page?eventId=…`;
-  prices live at `runners[].winRunnerOdds.americanDisplayOdds.americanOdds`, line at
-  `runners[].handicap`. Unofficial → best-effort, returns null on any miss. Two optional keys
-  in `odds.config.json`:
-  - `fanduelRegion` — your state subdomain (`nj`, `pa`, `co`, …). Default `nj`.
-  - **Champions League (current):** no custom page is needed — UCL events come off the soccer
-    SPORT page (`content-managed-page?page=SPORT&eventTypeId=1`) filtered by FanDuel's
-    `competitionId` 228 (set in `competition.mjs`).
-  - `fanduelWorldCupPageId` — slug from the sportsbook URL
-    (`…/navigation/soccer/<slug>`), e.g. `fifa-world-cup`. Without it, corners resolve only
-    for **live** matches (via `/in-play`); with it, upcoming matches work too.
+Competition-specific ids for each feed live in `competition.mjs`, so repointing at another
+tournament is a config change.
 
-## The honest gaps
-- **Corners now have a real market** via FanDuel's public API (`fanduel.mjs`), so corner
-  parlay legs grade our model projection against a real price (a genuine model-vs-market edge).
-- **No betting market for goalkeeper saves** exists in any feed we can reach — FanDuel doesn't
-  post a soccer saves market — so saves stay **model estimates** (display-only, never a leg).
-- ~~No player-level xG / shot rates for World Cup squads on free tiers~~ **Solved** via
-  FotMob's `__NEXT_DATA__` (see above) — real shot xG, team + per-player, free. (Understat/
-  FBref still cover club leagues only; FBref's advanced stats shut down Jan 2026.)
+---
 
-## Alternatives evaluated
+## In use
 
-| Source | Gives us | Cost | Verdict |
-|--------|----------|------|---------|
-| **API-Football** (api-sports.io) | All WC2026 matches: **lineups**, player stats (shots, etc.), fixture stats (**corners**), **predictions** endpoint, pre+live **odds** | Free 100 req/day · Pro $19/mo (7,500/day) | **Best free upgrade.** Lineups confirm starters/penalty-takers — huge for props. No xG. |
-| **Sportmonks** | **Real xG**, expected lineups, player stats, pressure index | Free plan (limited) · paid for full/WC | **Best data quality.** Get this if we want a real xG-driven model; likely paid for WC. |
-| **SofaScore** (unofficial) | xG, shotmaps, ratings, lineups | "free" via scraping | Rich but **brittle + ToS risk** (like FotMob). Avoid for a real tool. |
-| **FotMob** (unofficial) | **xG, shotmaps** | free | **In use** (`fotmob.mjs`). The `/api/*` endpoints are gated by a rotating signed `x-mas` header, but the public pages embed the same data in `__NEXT_DATA__` (SSR JSON, no header) — which we read. Brittle if the page restructures; best-effort with proxy fallback. |
-| **Props aggregators** — OddsPapi, SportsGameOdds, OddsJam, OpticOdds | Real **player props + corners + cards** across 100–370 books | OddsPapi/SportsGameOdds have **free tiers**; OddsJam/OpticOdds $99–499/mo+ | Only realistic way to get real saves/corners/props *odds*. Worth testing free tiers for WC soccer coverage. |
-| **BetsAPI** (bet365) | bet365 corners/cards/props markets | ~£20–30/mo | Good specifically for corners/cards betting lines. |
+### ESPN — the backbone (`lib.mjs`, no key)
+`site.api.espn.com/apis/site/v2/sports/soccer/<league>` plus the standings endpoint.
+Provides live score and clock, box-score stats (shots, shots on target, possession,
+**corners per side**, fouls, cards, passes, tackles), keeper stats, key events (goals,
+cards, subs, shootout kicks), the standings table, and an inline pre-match odds line. No
+player xG and no shot-level data.
 
-## Recommended next steps (in priority order)
-1. **Add API-Football (free key).** Biggest pick-quality jump for $0: real **lineups**
-   (so scorer/SoT props target actual starters + penalty taker) + player stats + a
-   predictions endpoint. Needs a free signup → user must create the key.
-2. **Replace The Odds API for props with a multi-book aggregator free tier** — its free tier is
-   NBA/MLB h2h only (soccer props need a paid plan), so prop **edges** keep breaking. Two free
-   tiers carry WC soccer player props across multiple books (enough to de-vig a real consensus):
-   - **SportsGameOdds** — explicitly covers every WC2026 fixture + player props; free tier is
-     gated (9 books, 10-min delay, 2,500-object cap) but 9 books is plenty for consensus and the
-     delay is irrelevant for a morning slate. Won "Best Free Tier" 2026.
-   - **OddsPapi** — 250 req/month, all 350+ books in one response, historical included, no card.
-     More generous on requests; verify scorer/SoT show on the free tier for WC soccer.
-   Both need a signup (user creates the key). Once keyed, a small client returning de-vigged
-   `{ scorers, sot }` drops into the same edge-gated parlay path the Odds API used.
-3. ~~Consider Sportmonks (paid) for a true xG model~~ — **no longer needed**: FotMob now
-   feeds real shot xG for free (`fotmob.mjs`). Sportmonks only worth it for *expected*
-   lineups / pressure index, which FotMob doesn't give us.
+`fixturePool()` covers the whole visible window in **one ranged call**
+(`dates=YYYYMMDD-YYYYMMDD&limit=300`), so the slate, the picker and search all share a
+single fetch. Refresh is every 30 s while a game is live.
 
-The model code is already isolated in `lib.mjs`, so adding a richer source means feeding
-better numbers into the same prediction/devig pipeline — not a rewrite.
+### FotMob — xG, lineups, form (`fotmob.mjs`, no key)
+FotMob's `/api/*` endpoints are gated behind a rotating signed `x-mas` header, but its
+public pages embed the same server-rendered payload in `<script id="__NEXT_DATA__">`, which
+isn't gated. That's what the module reads.
 
-## Sources
-- API-Football WC guide: https://www.api-football.com/news/post/fifa-world-cup-2026-guide-to-using-data-with-api-sports
-- Sportmonks xG/pricing: https://www.sportmonks.com/football-api/plans-pricing/
-- SofaScore data (unofficial scrapers): https://apify.com/azzouzana/sofascore-scraper-pro/api
-- Odds API pricing comparison 2026: https://oddspapi.io/blog/best-odds-apis-2026-comparison/
-- OpticOdds sports betting API: https://opticodds.com/sports-betting-api
-- Goalkeeper saves modeling (xS): https://www.soccermetrics.net/goalkeeping-analytics/expected-saves-an-inverse-of-expected-goals
-- Corners (compound Poisson): https://arxiv.org/abs/2112.13001
-- Dixon–Coles team-strength model: https://dashee87.github.io/football/python/predicting-football-results-with-statistical-modelling-dixon-coles-and-time-weighting/
-- Devig / finding prop edge: https://betpredictionsite.com/blog/prop-betting-iq-price-player-props/
+| Page | Gives |
+|---|---|
+| league matches | fixture list with matchday numbers and match-page links |
+| match page | **shot map** (every shot with pitch coordinates, xG, xGOT, type, situation, keeper), team xG/xGOT/big chances, momentum series, **lineups with formations, pitch slots, live ratings and events**, attacking zones, team form |
+| team page | the club's whole season across **every competition** (league, cup, Europe) with the same match-page links |
+
+The team page is what makes matchday one work: `recentMatches()` takes a club's last three
+competitive games from wherever it last played (friendlies skipped), so form, corner and
+saves projections and scorer numbers exist before any Champions League history does.
+
+Unofficial and brittle if the pages restructure. Player headshots come from
+`images.fotmob.com/image_resources/playerimages/<id>.png` with an initials fallback.
+
+### Action Network — FanDuel prices and public money (`actionnetwork.mjs`, no key)
+Public JSON. Provides FanDuel's moneyline, spread and total (book id 69 plus state
+variants), and the **public betting splits**: share of tickets versus share of money per
+outcome. The money-versus-tickets divergence is the only sharp-money signal in the free
+stack. This is also the primary odds source when no Odds API key is set.
+
+### FanDuel public sportsbook API — corners, BTTS, player prices (`fanduel.mjs`, no key)
+The same JSON FanDuel's own site fetches, with a public app key. Provides **total match
+corners** over/under, **both teams to score**, and **anytime scorer / shots on target**
+prices. Prices sit at `runners[].winRunnerOdds.americanDisplayOdds.americanOdds`, lines at
+`runners[].handicap`.
+
+Champions League events come off the soccer SPORT page
+(`content-managed-page?page=SPORT&eventTypeId=1`) filtered by FanDuel's `competitionId`
+228; there's no custom competition page. Optional config: `fanduelRegion` (your state
+subdomain, default `nj`) and `fanduelWorldCupPageId` (only for competitions that do have a
+custom page).
+
+Single-book, so its player prices are **display-only** — there's no cross-book consensus to
+de-vig against, therefore no honest edge.
+
+### OddsPapi — best price across books (`oddspapi.mjs`, optional key)
+250 requests a month on the free tier, all books in one response. Provides corners, BTTS,
+draw-no-bet, team totals and Asian handicaps across books, which is what lets the Builder
+show a real "best price" and the card price markets FanDuel alone doesn't cover. Books to
+try are configurable (`oddspapiBooks`, default `fanduel,bet365`); responses are cached 30
+minutes to 12 hours because pre-match lines barely move.
+
+**Watch for stale lines.** A ±0.5 handicap from a line shop that beats FanDuel's moneyline
+on the same outcome is a stale price, not value — the card guards against exactly that.
+
+### The Odds API — multi-book and props (`lib.mjs`, optional key)
+500 requests a month, **shared with another project**. When present it becomes the primary
+odds source: multi-book moneylines with a best-price comparison, plus anytime-scorer and
+shots-on-target props for the tracked game. Spend is deliberately small: the events list
+costs 2 credits and the tracked game's props 2, cached 30 minutes pre-match, 5 minutes in
+play, and never refetched once a game is final. An exhausted key is remembered for the rest
+of the process. The morning card never calls it.
+
+---
+
+## Honest gaps
+
+- **No goalkeeper-saves market exists** in any feed reachable for free, so saves stay model
+  estimates. The line is centred on the projection, which makes the probability meaningful,
+  but there is nothing to beat.
+- **Player props are single-book** unless The Odds API key is live, so scorer and
+  shots-on-target numbers are display-only.
+- **Corners have a real market** (FanDuel, OddsPapi) but the model's own corner projections
+  proved badly calibrated (36% hit against 60% claimed over n=11), so corners are benched
+  from the card and shown for reading only.
+- **No expected lineups** before the confirmed XIs post, roughly an hour before kickoff.
+
+---
+
+## Team-name matching
+
+Every feed spells clubs differently: `Bayern Munich` / `Bayern München`, `Internazionale` /
+`Inter`, `Bodo/Glimt` / `Bodø/Glimt`, `Sporting CP` / `Sporting Lisbon`,
+`Paris Saint-Germain` / `PSG`. `teams.mjs` is the single matcher — diacritics folded,
+aliases canonicalised, generic tokens dropped, every distinctive token of the shorter name
+required in the longer one, and **abbreviations matched only by exact equality**. All 36
+clubs in the current field resolve against every feed.
+
+This is not a nicety. The earlier per-module substring matchers put Dortmund's players on
+Bayern's page and City's on United's, because ESPN's `MUN` and `MAN` codes appear inside
+those longer names.
+
+---
+
+## Evaluated and not used
+
+| Source | Would give | Cost | Verdict |
+|---|---|---|---|
+| **API-Football** (api-sports.io) | expected + confirmed lineups, player stats, fixture stats, a predictions endpoint, pre and live odds | free 100/day, $19/mo for 7,500/day | Best free upgrade if expected lineups matter. No xG. |
+| **Sportmonks** | real xG, expected lineups, pressure index | free tier limited, paid for full | Best data quality, but FotMob already gives xG for free. |
+| **SofaScore** (unofficial) | xG, shot maps, ratings, lineups | scraping | Rich but brittle and ToS-risky. FotMob already fills this role. |
+| **SportsGameOdds** | player props across ~9 books on the free tier | free, gated | The realistic route to *de-viggable* prop consensus, which would let scorer legs earn a real edge. |
+| **OddsJam / OpticOdds** | props across 100+ books | $99–499/mo | Overkill for a personal tool. |
+| **BetsAPI** (bet365) | corners and cards markets | ~£20–30/mo | Only if corners become a serious market again. |
+
+The model is isolated in `lib.mjs`, so adding a richer source means feeding better numbers
+into the same prediction and de-vig pipeline, not a rewrite.
+
+---
+
+## Reading
+
+- Dixon–Coles team strength (the planned engine):
+  <https://dashee87.github.io/football/python/predicting-football-results-with-statistical-modelling-dixon-coles-and-time-weighting/>
+- Expected saves as an inverse of xG:
+  <https://www.soccermetrics.net/goalkeeping-analytics/expected-saves-an-inverse-of-expected-goals>
+- Corners as a compound Poisson process: <https://arxiv.org/abs/2112.13001>
+- De-vigging and pricing player props:
+  <https://betpredictionsite.com/blog/prop-betting-iq-price-player-props/>
+- Odds API comparison 2026: <https://oddspapi.io/blog/best-odds-apis-2026-comparison/>
