@@ -27,13 +27,10 @@ function nextData(html) {
   try { return JSON.parse(m[1]).props?.pageProps ?? null; } catch { return null; }
 }
 
-const norm = (s) => (s || "").toLowerCase().replace(/\b(and|the)\b/g, "").replace(/[^a-z]/g, "");
-function nameMatch(a, b) {
-  const x = norm(a), y = norm(b);
-  if (!x || !y) return false;
-  return x === y || x.includes(y) || y.includes(x);
-}
-const sideMatch = (anName, t) => nameMatch(anName, t?.name) || (t?.abbr && nameMatch(anName, t.abbr));
+import { teamMatch } from "./teams.mjs";
+// ESPN ref { name, abbr } ↔ FotMob team name — strict (see teams.mjs); abbreviations never match
+const nameMatch = teamMatch;
+const sideMatch = (anName, t) => teamMatch(anName, t?.name);
 
 let _fixtures = { at: 0, data: null };
 // full WC fixture list: [{ id, pageUrl, home:{id,name}, away:{id,name}, utcTime, finished, started }]

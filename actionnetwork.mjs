@@ -21,17 +21,10 @@ const FADE_GAP = 8;              // min tickets−money gap (pts) on the public 
 const FANDUEL_IDS = [69, 252, 647, 213, 79, 972];
 const ml2p = (ml) => (ml == null ? null : ml > 0 ? 100 / (ml + 100) : -ml / (-ml + 100));
 
-const norm = (s) => (s || "").toLowerCase().replace(/\b(and|the)\b/g, "").replace(/[^a-z]/g, "");
-function nameMatch(a, b) {
-  const x = norm(a), y = norm(b);
-  if (!x || !y) return false;
-  return x === y || x.includes(y) || y.includes(x);
-}
-// does an Action Network team (full name / display / abbr) match an ESPN ref { name, abbr }?
-function teamMatches(anTeam, ref) {
-  const cands = [anTeam?.full_name, anTeam?.display_name, anTeam?.abbr].filter(Boolean);
-  return cands.some((c) => nameMatch(c, ref?.name) || (ref?.abbr && nameMatch(c, ref.abbr)));
-}
+import { refMatch } from "./teams.mjs";
+// does an Action Network team match an ESPN ref { name, abbr }? Names strictly (teams.mjs); the
+// feed's own abbr field only by exact equality — never a substring of a longer name
+const teamMatches = (anTeam, ref) => refMatch([anTeam?.full_name, anTeam?.display_name], ref, anTeam?.abbr);
 
 let _cache = { at: 0, games: null };
 export async function fetchActionGames() {

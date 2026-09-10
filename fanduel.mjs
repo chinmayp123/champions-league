@@ -36,11 +36,12 @@ const WC_PAGE = process.env.FANDUEL_WC_PAGE || cfg().fanduelWorldCupPageId || CO
 const COMP_ID = COMP.fanduel.competitionId || null;
 const H = { "User-Agent": UA, "Accept": "application/json", "Referer": "https://sportsbook.fanduel.com/" };
 
-const norm = (s) => (s || "").toLowerCase().replace(/\b(and|the|fc|afc)\b/g, "").replace(/[^a-z]/g, "");
-// does a FanDuel event name contain this team (by full name or 3-letter abbr)?
+import { teamMatch, splitFixtureName } from "./teams.mjs";
+// does a FanDuel event name ("Home v Away" / "Home @ Away") name this team? Strict club match
+// on each side of the fixture name; abbreviations never match
 function nameIn(eventName, ref) {
-  const x = norm(eventName); if (!x) return false;
-  return [ref?.name, ref?.abbr].filter(Boolean).map(norm).some((c) => c && (x.includes(c) || c.includes(x)));
+  const sides = splitFixtureName(eventName) || [eventName];
+  return sides.some((side) => teamMatch(side, ref?.name));
 }
 
 let _cache = { at: 0, events: null };

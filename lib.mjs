@@ -10,6 +10,7 @@ import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmob
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelProps } from "./fanduel.mjs";
 import { COMP, isPhaseSlug, compMeta, clubLeague, readConfig } from "./competition.mjs";
+import { teamMatch } from "./teams.mjs";
 
 // every competition-specific id lives in competition.mjs — repoint the tool there, not here
 export const BASE = `https://site.api.espn.com/apis/site/v2/sports/soccer/${COMP.espn}`;
@@ -166,11 +167,8 @@ export async function fetchPlayerProps(oddsEventId) {
   return data;
 }
 
-const normTeam = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "").replace(/^(the)/, "");
-export function teamsMatch(a, b) {
-  const x = normTeam(a), y = normTeam(b);
-  return x === y || x.includes(y) || y.includes(x);
-}
+// strict club match (teams.mjs) — see the note there on why substrings were a bug
+export const teamsMatch = (a, b) => teamMatch(a, b);
 
 // find the odds-API event matching an ESPN match, build a per-outcome book comparison
 export function matchOdds(events, homeName, awayName) {
@@ -363,8 +361,7 @@ export async function matchConditions(ev, homeRef, awayRef) {
     const restFor = (ref) => {
       if (!fixtures?.length || !curMs) return null;
       const played = fixtures.filter((f) => f.utcTime && new Date(f.utcTime).getTime() < curMs - 36e5 &&
-        (teamsMatch(f.home.name, ref.name) || (ref.abbr && teamsMatch(f.home.name, ref.abbr)) ||
-         teamsMatch(f.away.name, ref.name) || (ref.abbr && teamsMatch(f.away.name, ref.abbr))));
+        (teamsMatch(f.home.name, ref.name) || teamsMatch(f.away.name, ref.name)));
       if (!played.length) return null;
       played.sort((a, b) => new Date(b.utcTime) - new Date(a.utcTime));
       return Math.max(0, Math.round((curMs - new Date(played[0].utcTime).getTime()) / 864e5));

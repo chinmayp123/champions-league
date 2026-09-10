@@ -394,7 +394,7 @@ export async function generateDailyParlays(stake = 10, events = null) {
   const longshot = longLegs.length >= 2 ? buildParlay(longLegs, stake) : null;
   // why each game did or didn't make the card — so an empty card still explains itself
   const notes = games.map((g) => {
-    const legs = g.candidates.filter((l) => l.market !== "Corners");
+    const legs = g.candidates.filter((l) => l.market !== "Corners" && l.market !== "Scorer"); // neither is ever bet
     const bet = legs.filter(bettable);
     if (bet.length) return { game: g.game, ok: true, text: `${bet.length} leg${bet.length === 1 ? "" : "s"} in the band` };
     const guardAll = legs.length && legs.every((l) => l.guard) ? legs[0].guard : null;

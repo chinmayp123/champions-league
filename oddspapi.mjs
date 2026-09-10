@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { COMP, readConfig } from "./competition.mjs";
+import { teamMatch } from "./teams.mjs";
 
 const API = "https://api.oddspapi.io/v4";
 const SOCCER = 10, WC = COMP.oddspapiTournamentId; // "WC" = the active competition's tournamentId
@@ -48,7 +49,7 @@ async function fixtureNames() {
   const ymd = (off) => new Date(now + off * 86400000).toISOString().slice(0, 10);
   const map = {};
   for (const f of arr(await get(`/fixtures?sportId=${SOCCER}&tournamentIds=${WC}&from=${ymd(-2)}&to=${ymd(7)}`)))
-    map[f.fixtureId] = [f.participant1Abbr, f.participant1Name, f.participant2Abbr, f.participant2Name].map(norm);
+    map[f.fixtureId] = { names: [f.participant1Name, f.participant2Name], abbrs: [f.participant1Abbr, f.participant2Abbr] };
   _fix = { at: now, map };
   return map;
 }
@@ -77,16 +78,15 @@ async function matchMarkets(home, away) {
 async function allBookMarkets(home, away, firstOnly = false) {
   if (!KEY) return [];
   const names = await fixtureNames();
-  const wantH = [norm(home.abbr), norm(home.name)].filter(Boolean);
-  const wantA = [norm(away.abbr), norm(away.name)].filter(Boolean);
-  const hit = (toks, wants) => wants.some((w) => toks.some((t) => t && (t === w || t.includes(w) || w.includes(t))));
+  // strict club match on the fixture's names (teams.mjs); its abbr field only by exact equality
+  const hit = (fx, ref) => fx && (fx.names.some((n) => teamMatch(n, ref.name)) || fx.abbrs.some((a) => a && ref.abbr && a.toUpperCase() === ref.abbr.toUpperCase()));
   const out = [];
   for (const book of BOOKS) {
     let odds;
     try { odds = await tournamentOdds(book); } catch { continue; }
     const fx = odds.find((f) => {
       const toks = names[f.fixtureId];
-      return f.bookmakerOdds?.[book] && toks && hit(toks, wantH) && hit(toks, wantA);
+      return f.bookmakerOdds?.[book] && toks && hit(toks, home) && hit(toks, away);
     });
     if (fx) {
       out.push({ markets: fx.bookmakerOdds[book].markets || {}, book });
