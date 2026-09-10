@@ -598,6 +598,7 @@ function renderMatch(m) {
   ]);
 
   const blocks = [];
+  const late = [];   // expanded + pre-match: shown under the cards (pitch, then the sheet)
   // header extras: pens, kick-by-kick shootout, champions banner, venue (compact)
   const extra = [];
   if (m.home.shoot != null || m.away.shoot != null) extra.push(h("div", { class: "pens", text: `Penalties · ${m.home.abbr} ${m.home.shoot ?? 0}–${m.away.shoot ?? 0} ${m.away.abbr}` }));
@@ -636,8 +637,10 @@ function renderMatch(m) {
       if (tiles.length < 6) tiles.push(tile(`${m.home.abbr} ${p.expH.toFixed(1)} · ${m.away.abbr} ${p.expA.toFixed(1)}`, "Expected goals each · model"));
     }
     if (tiles.length) blocks.push(h("div", { class: `stat-grid c${Math.min(6, Math.max(3, tiles.length))}` }, tiles.slice(0, 6)));
-    // the pitch: formations, ratings and the shot map, with hover zones for corners / goals / boxes
-    if (m.pitch) blocks.push(pitchCard(m));
+    // the pitch: formations, ratings and the shot map, with hover zones for corners / goals / boxes.
+    // Before kickoff there are no shots to plot and the model's read is what matters, so the pitch
+    // drops below the cards; once the game is on it leads.
+    if (m.pitch) { if (pre) late.push(pitchCard(m)); else blocks.push(pitchCard(m)); }
   }
 
   // prediction: the story of the game
@@ -700,8 +703,11 @@ function renderMatch(m) {
   // ---- expanded: the match sheet goes under the pitch (before the first card); the model's
   // pre-match projections and FanDuel props stay as cards ----
   if (expanded) {
-    const firstLabel = blocks.findIndex((b) => b.classList && b.classList.contains("label"));
-    blocks.splice(firstLabel < 0 ? blocks.length : firstLabel, 0, ...matchSheet(m));
+    if (pre) late.push(...matchSheet(m));
+    else {
+      const firstLabel = blocks.findIndex((b) => b.classList && b.classList.contains("label"));
+      blocks.splice(firstLabel < 0 ? blocks.length : firstLabel, 0, ...matchSheet(m));
+    }
     const kv = (a, b, cls = "est", title = null) => h("div", { class: "gk" }, [h("span", { text: a, title }), h("span", { class: cls, text: b })]);
     if (m.pregameProj) {
       const pg = m.pregameProj, c = pg.corners;
@@ -751,7 +757,7 @@ function renderMatch(m) {
     blocks.push(h("div", { class: "disc", text: "⚠ Model estimates, not financial advice. Odds are −EV on average; stake small." }));
   }
 
-  if (expanded) flushCards(blocks);
+  if (expanded) flushCards(blocks, late);
   else body.appendChild(frag(blocks));
 }
 // ── PITCH: both XIs as headshots on the grass; every number lives in a popover above whatever
@@ -1115,7 +1121,7 @@ function matchSheet(m) {
   const cmpCard = cmpKids.length ? cardEl("Team comparison", "ESPN · FotMob · solid bar = the leader", cmpKids) : null;
 
   // --- players table: starters + subs who played, top rated plus everyone with real chances ---
-  const lu = m.pitch?.lineups;
+  const lu = m.state === "pre" ? null : m.pitch?.lineups;   // pre-match: no ratings/shots to table
   let people = [];
   if (lu) for (const side of ["home", "away"]) {
     for (const p of lu[side]?.starters || []) people.push({ ...p, side, bench: false });
@@ -1275,7 +1281,7 @@ function mkOf(pick) {
 
 // expanded layout: the flat blocks become cards (each .label starts one), balanced over two
 // columns; the stat strip / header extras stay above, full-width sections and the disclaimer below
-function flushCards(blocks) {
+function flushCards(blocks, late = []) {
   const header = [], sections = [], full = [], footer = [];
   let cur = null;
   for (const b of blocks) {
@@ -1306,6 +1312,7 @@ function flushCards(blocks) {
   body.appendChild(frag(header));
   body.appendChild(h("div", { class: "two" }, [cols[0], cols[1]]));
   full.forEach((s) => body.appendChild(mkCard(s)));
+  late.forEach((n) => body.appendChild(n));
   footer.forEach((f) => body.appendChild(f));
 }
 function pickTop(recs, n) {

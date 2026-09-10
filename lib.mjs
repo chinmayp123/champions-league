@@ -264,27 +264,33 @@ const blendRate = (liveRate, priorTotal, elapsed, FT) => {
 
 // model-derived saves line for a keeper (no book offers this market — model estimate only).
 // `prior` = the pre-match projected full-match saves for this keeper, when we have one.
-export function keeperSaveLine(saves, minute, state, line = 2.5, prior = null) {
+export function keeperSaveLine(saves, minute, state, line = null, prior = null) {
   const FT = 95;
-  if (state === "post") return { proj: saves, settled: true, over: saves > line, line };
+  if (state === "post") { const l = line ?? centreLine(saves); return { proj: saves, settled: true, over: saves > l, line: l }; }
   if (minute == null) return null;
   const elapsed = Math.max(minute, 10);
   const rate = blendRate(saves / elapsed, prior, elapsed, FT);
   const remMin = Math.max(0, FT - minute);
   const lambdaRem = rate * remMin;
   const proj = saves + lambdaRem;
+  if (line == null) line = centreLine(proj);   // no book offers keeper saves — centre on the projection
   const need = Math.ceil(line) - saves;
   const pOver = need <= 0 ? 1 : 1 - poissonCdf(need - 1, lambdaRem);
   return { proj, lambdaRem, pOver, need, line, settled: false };
 }
 
+// a half-goal line centred on a projection, so the O/U it prices is actually a close call.
+// Fixed lines made the read useless: every game showed "over 9.5" whatever the projection, and a
+// keeper projected 6.8 saves showed "over 2.5 · 98%" — true, and worth nothing.
+export const centreLine = (v) => Math.max(0.5, Math.floor(Number(v) || 0) + 0.5);
+
 // model-derived corners line per side + total O/U. Corners per side ARE real live data
 // (ESPN box score); there's no corners betting market in the feed, so the O/U is a model
 // estimate. Extrapolate each side's corner rate to full time; price the total via Poisson.
 // `prior` = { home, away } pre-match projected corners per side, when we have them.
-export function cornersModel(hC, aC, minute, state, line = 9.5, prior = null) {
+export function cornersModel(hC, aC, minute, state, line = null, prior = null) {
   const FT = 95;
-  if (state === "post") { const total = hC + aC; return { settled: true, home: hC, away: aC, total, over: total > line, line }; }
+  if (state === "post") { const total = hC + aC; const l = line ?? centreLine(total); return { settled: true, home: hC, away: aC, total, over: total > l, line: l }; }
   if (minute == null) return null; // pre-match: no corners yet
   const elapsed = Math.max(minute, 10);
   const remMin = Math.max(0, FT - minute);
@@ -293,6 +299,8 @@ export function cornersModel(hC, aC, minute, state, line = 9.5, prior = null) {
   const projH = hC + rateH * remMin;
   const projA = aC + rateA * remMin;
   const lambdaRemTotal = (rateH + rateA) * remMin;
+  // no book corners market in the free feeds, so the line follows the projection
+  if (line == null) line = centreLine(projH + projA);
   const need = Math.ceil(line) - (hC + aC);
   const pOver = need <= 0 ? 1 : 1 - poissonCdf(need - 1, lambdaRemTotal);
   return { settled: false, home: hC, away: aC, projH, projA, totalProj: projH + projA, pOver, need, line, odds: probToAmerican(pOver) };
@@ -655,7 +663,7 @@ export async function pregameProjections(home, away) {
   // the opponent's (shrunk) conceding rate; total drives an O/U 9.5 via Poisson
   const cH = mean(shrink(hr.cornersFor, 5), shrink(ar.cornersAgainst, 5));
   const cA = mean(shrink(ar.cornersFor, 5), shrink(hr.cornersAgainst, 5));
-  const cTotal = cH + cA, cLine = 9.5;
+  const cTotal = cH + cA, cLine = centreLine(cTotal);
   const pOverC = 1 - poissonCdf(Math.floor(cLine), cTotal);
   // keeper saves: expected shots-on-target faced minus expected goals conceded (xG proxy)
   const sotFacedH = mean(shrink(ar.sotFor, 4), shrink(hr.sotAgainst, 4));
@@ -663,20 +671,20 @@ export async function pregameProjections(home, away) {
   const gaH = mean(shrink(ar.xgFor, 1.3), shrink(hr.xgAgainst, 1.3));
   const gaA = mean(shrink(hr.xgFor, 1.3), shrink(ar.xgAgainst, 1.3));
   const savesH = Math.max(0, sotFacedH - gaH), savesA = Math.max(0, sotFacedA - gaA);
-  const sLine = 2.5;
+  const sLineH = centreLine(savesH), sLineA = centreLine(savesA);
   // projected shots + shots on target per side (own attacking rate vs opponent conceding rate)
   const shotsH = mean(shrink(hr.shotsFor, 12), shrink(ar.shotsAgainst, 12));
   const shotsA = mean(shrink(ar.shotsFor, 12), shrink(hr.shotsAgainst, 12));
   const sotH = mean(shrink(hr.sotFor, 4), shrink(ar.sotAgainst, 4));
   const sotA = mean(shrink(ar.sotFor, 4), shrink(hr.sotAgainst, 4));
-  const pOverSH = 1 - poissonCdf(Math.floor(sLine), savesH), pOverSA = 1 - poissonCdf(Math.floor(sLine), savesA);
+  const pOverSH = 1 - poissonCdf(Math.floor(sLineH), savesH), pOverSA = 1 - poissonCdf(Math.floor(sLineA), savesA);
   return {
     basis: `recent form (${Math.max(hr.games, ar.games)}g · ${[...new Set([...(hr.competitions || []), ...(ar.competitions || [])])].slice(0, 2).join(", ") || "all comps"})`,
     shots: { home: { shots: shotsH, sot: sotH }, away: { shots: shotsA, sot: sotA } },
     corners: { home: cH, away: cA, total: cTotal, line: cLine, pOver: pOverC, odds: probToAmerican(pOverC) },
     saves: {
-      home: { proj: savesH, line: sLine, pOver: pOverSH, odds: probToAmerican(pOverSH) },
-      away: { proj: savesA, line: sLine, pOver: pOverSA, odds: probToAmerican(pOverSA) },
+      home: { proj: savesH, line: sLineH, pOver: pOverSH, odds: probToAmerican(pOverSH) },
+      away: { proj: savesA, line: sLineA, pOver: pOverSA, odds: probToAmerican(pOverSA) },
     },
     // attack/defence strength blends xG with REAL goals scored/conceded, so a team that has
     // actually been banging them in (or leaking) moves the scoreline prior — not just chance
@@ -775,7 +783,7 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
   if (Object.keys(hs).length) {
     const hC = parseInt(hs.wonCorners || 0, 10) || 0;
     const aC = parseInt(as.wonCorners || 0, 10) || 0;
-    corners = cornersModel(hC, aC, minute, state, 9.5, priors?.corners ? { home: priors.corners.home, away: priors.corners.away } : null);
+    corners = cornersModel(hC, aC, minute, state, null, priors?.corners ? { home: priors.corners.home, away: priors.corners.away } : null);
   }
 
   // prediction + recommended bets — run-of-play model once live, market-based pre-match
@@ -816,7 +824,7 @@ export function buildMatchView(ev, sum, liveOdds, realXG = null, publicBetting =
       if (!ps.appearances) continue;
       const saves = ps.saves ?? 0;
       const side = r.team?.id === home.team.id ? "home" : r.team?.id === away.team.id ? "away" : null;
-      const ln = keeperSaveLine(saves, minute, state, 2.5, side && priors?.saves ? priors.saves[side]?.proj : null);
+      const ln = keeperSaveLine(saves, minute, state, null, side && priors?.saves ? priors.saves[side]?.proj : null);
       keepers.push({
         abbr, name: p.athlete?.displayName || "?", saves, ga: ps.goalsConceded ?? 0, faced: ps.shotsFaced ?? 0,
         line: ln ? (ln.settled ? { settled: true, over: ln.over, value: ln.line }
