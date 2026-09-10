@@ -1612,7 +1612,15 @@ function renderRecord(data) {
     if (ps.n) wrap.appendChild(h("div", { class: "stat-grid c5" }, [
       tile(pct(ps.resultRate), `Result right (${ps.n})`, ps.resultRate >= 0.5 ? "up" : ""), tile(pct(ps.exactRate), "Exact score"), tile(pct(ps.over25Rate), "Over 2.5 call"), tile(pct(ps.bttsRate), "BTTS call"), tile(ps.brier.toFixed(3), "Brier · 1X2", ps.brier < 0.6 ? "up" : ""),
     ]));
-    const hdr = h("div", { class: "ptr h pred" }, ["Game", "Predicted", "Actual", "Winner", "Over 2.5", "BTTS", "Basis"].map((t) => h("span", { text: t })));
+    // scorer projections, graded: did the top projected scorer score, and are the %s honest?
+    const sp = ps.scorers;
+    if (sp) {
+      const kids = [tile(pct(sp.topRate), `Top scorer scored (${sp.topN})`, sp.topRate >= 0.4 ? "up" : ""), tile(`${sp.actual} / ${sp.expected.toFixed(1)}`, `Scored vs projected (${sp.n} players)`), tile(sp.brier.toFixed(3), "Brier · scorers", sp.brier < 0.2 ? "up" : "")];
+      for (const [label, b] of sp.buckets) kids.push(tile(`${pct(b.actual)} ⁄ ${pct(b.projected)}`, `${label} · scored ⁄ projected (${b.n})`, Math.abs(b.actual - b.projected) < 0.1 ? "up" : ""));
+      wrap.appendChild(h("div", { class: `stat-grid c${Math.min(6, kids.length)}` }, kids));
+      wrap.appendChild(h("div", { class: "hint", text: "Scorer projections are display-only. \"Scored ⁄ projected\" compares how often players in a band actually scored with what the model claimed — matching numbers mean the %s are honest, not that they beat the book." }));
+    }
+    const hdr = h("div", { class: "ptr h pred" }, ["Game", "Predicted", "Actual", "Winner", "Over 2.5", "BTTS", "Top scorers", "Basis"].map((t) => h("span", { text: t })));
     const rowsEl = h("div", { class: "predrows" }, [hdr]);
     for (const r of pr.rows.slice(0, 40)) {
       const p = r.pred, g = r.grade;
@@ -1625,6 +1633,7 @@ function renderRecord(data) {
         h("span", {}, [txt(callTxt + " "), g ? mark(g.resultHit) : null]),
         h("span", {}, [txt(p.pOver25 != null ? `${p.pOver25 >= 0.5 ? "over" : "under"} ${Math.round(p.pOver25 * 100)}% ` : "— "), g ? mark(g.over25Hit) : null]),
         h("span", {}, [txt(p.pBTTS != null ? `${p.pBTTS >= 0.5 ? "yes" : "no"} ${Math.round(p.pBTTS * 100)}% ` : "— "), g ? mark(g.bttsHit) : null]),
+        h("span", { class: "tev scorers" }, r.scorers ? ["home", "away"].flatMap((side) => (r.scorers[side] || []).slice(0, 2).map((s) => h("span", { class: `sc${s.scored == null ? "" : s.scored ? " hit" : " miss"}`, title: `${s.name} · ${Math.round(s.p * 100)}% to score`, text: `${s.name.split(" ").pop()} ${Math.round(s.p * 100)}%${s.scored == null ? "" : s.scored ? " ✓" : " ✗"}` }))) : [txt("—")]),
         h("span", { class: "tev", text: p.basis || "" }),
       ]));
     }

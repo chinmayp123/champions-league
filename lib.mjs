@@ -1083,16 +1083,19 @@ function savePredStore(store) {
   } catch { /* best-effort */ }
 }
 // freeze once — the first pre-match look wins, so a later refresh can't quietly revise the call
-export function freezePrediction(ev, pred) {
+export function freezePrediction(ev, pred, scorers = null) {
   if (!pred || !ev) return;
   const store = loadPredStore();
   const prior = store[ev.id];
+  const packScorers = (pp) => pp ? { home: (pp.home || []).filter((p) => p.scoreProb > 0).slice(0, 6).map((p) => ({ name: p.name, p: p.scoreProb })), away: (pp.away || []).filter((p) => p.scoreProb > 0).slice(0, 6).map((p) => ({ name: p.name, p: p.scoreProb })) } : null;
   if (prior) {
     // the slate's market call has no totals; the fuller match-view call may fill ONLY those in
     // (the 1X2 and scoreline stay as first frozen)
     let filled = false;
     if (prior.pred.pOver25 == null && pred.pOver25 != null) { prior.pred.pOver25 = pred.pOver25; filled = true; }
     if (prior.pred.pBTTS == null && pred.pBTTS != null) { prior.pred.pBTTS = pred.pBTTS; filled = true; }
+    // the scorer projections come with the fuller match-view call; freeze them once too
+    if (!prior.scorers && scorers && ((scorers.home || []).length || (scorers.away || []).length)) { prior.scorers = packScorers(scorers); filled = true; }
     if (filled) savePredStore(store);
     return;
   }
@@ -1102,15 +1105,18 @@ export function freezePrediction(ev, pred) {
     game: `${home.team.abbreviation} v ${away.team.abbreviation}`, date: ev.date,
     homeAbbr: home.team.abbreviation, awayAbbr: away.team.abbreviation, homeLogo: home.team.logo || null, awayLogo: away.team.logo || null,
     pred: { ph: pred.ph, pa: pred.pa, wH: pred.wH, wD: pred.wD, wA: pred.wA, pOver25: pred.pOver25 ?? null, pBTTS: pred.pBTTS ?? null, basis: pred.basis || "market" },
+    scorers: packScorers(scorers),
     frozenAt: Date.now(), actual: null, graded: false,
   };
   savePredStore(store);
 }
 // grade frozen calls against the finished events in the fixture pool; returns every entry with its
 // grades plus the running tallies. Cheap (no network) — the pool is passed in.
-export function gradePredictions(events) {
+export async function gradePredictions(events) {
   const store = loadPredStore();
   let changed = false;
+  const nrm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z]/g, "");
+  const lastTok = (s) => nrm((s || "").split(/\s+/).filter(Boolean).pop());
   for (const ev of events || []) {
     const e = store[ev.id];
     if (!e || e.graded) continue;
@@ -1118,6 +1124,16 @@ export function gradePredictions(events) {
     if (comp.status.type.state !== "post") continue;
     const home = comp.competitors.find((t) => t.homeAway === "home"), away = comp.competitors.find((t) => t.homeAway === "away");
     e.actual = { h: Number(home.score) || 0, a: Number(away.score) || 0 };
+    // scorers: who actually scored, from the finished game's shot map (own goals excluded)
+    if (e.scorers) {
+      try {
+        const xg = await fotmobXG({ name: home.team.displayName, abbr: home.team.abbreviation }, { name: away.team.displayName, abbr: away.team.abbreviation }, ev.date);
+        const scored = (xg?.players || []).filter((p) => p.goals > 0);
+        const hit = (name, side) => scored.some((q) => q.side === side && (nrm(q.name) === nrm(name) || nrm(q.name).includes(lastTok(name))));
+        for (const side of ["home", "away"]) for (const p of e.scorers[side] || []) p.scored = hit(p.name, side);
+        e.scorers.actual = { home: scored.filter((q) => q.side === "home").map((q) => q.name), away: scored.filter((q) => q.side === "away").map((q) => q.name) };
+      } catch { /* leave the scorer grades for the next pass */ }
+    }
     e.graded = true; changed = true;
   }
   if (changed) savePredStore(store);
@@ -1144,6 +1160,19 @@ export function gradePredictions(events) {
     n: g.length, resultRate: rate(g, "resultHit"), exactRate: rate(g, "exact"), over25Rate: rate(g, "over25Hit"), bttsRate: rate(g, "bttsHit"),
     brier: g.reduce((s, r) => s + r.grade.brier, 0) / g.length, logScore: g.reduce((s, r) => s + Math.log(Math.max(r.grade.pResult, 0.01)), 0) / g.length,
   } : { n: 0 };
+  // scorer projections: every projected player with a grade, pooled across games
+  const sc = g.flatMap((r) => r.scorers ? ["home", "away"].flatMap((side) => (r.scorers[side] || []).filter((p) => p.scored != null)) : []);
+  if (sc.length) {
+    const tops = g.filter((r) => r.scorers).flatMap((r) => ["home", "away"].map((side) => (r.scorers[side] || [])[0]).filter((p) => p && p.scored != null));
+    const bucket = (lo, hi) => { const b = sc.filter((p) => p.p >= lo && p.p < hi); return b.length ? { n: b.length, projected: b.reduce((s, p) => s + p.p, 0) / b.length, actual: b.filter((p) => p.scored).length / b.length } : null; };
+    stats.scorers = {
+      n: sc.length, games: g.filter((r) => r.scorers).length,
+      topRate: tops.length ? tops.filter((p) => p.scored).length / tops.length : null, topN: tops.length,
+      expected: sc.reduce((s, p) => s + p.p, 0), actual: sc.filter((p) => p.scored).length,
+      brier: sc.reduce((s, p) => s + (p.p - (p.scored ? 1 : 0)) ** 2, 0) / sc.length,
+      buckets: [["under 20%", bucket(0, 0.2)], ["20–40%", bucket(0.2, 0.4)], ["40%+", bucket(0.4, 1.01)]].filter(([, b]) => b),
+    };
+  }
   return { rows, stats };
 }
 
@@ -1199,7 +1228,7 @@ export async function getRecord() {
     await bl.settle().catch(() => {});
     const log = bl.readLog();
     const projAccuracy = await getProjectionAccuracy().catch(() => null);
-    const predictions = gradePredictions(await fixturePool().catch(() => []));
+    const predictions = await gradePredictions(await fixturePool().catch(() => []));
     const data = { stats: bl.stats(), recent: bl.statsRecent(7), projAccuracy, goalsBias: bl.goalsBias(), predictions, days: (log.days || []).slice().reverse() }; // newest first
     recordCache = { at: now, data };
     return data;
@@ -1413,6 +1442,7 @@ export async function getWidgetState(query) {
     const gb = await import("./betlog.mjs").then((b) => b.goalsBias().factor).catch(() => 1);
     const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions, gb);
     if (isPre && view.prediction) freezePrediction(ev, view.prediction);
+    // (the scorer projections are built a little further down; they're frozen there)
     // the frozen pre-match call rides along so a live or finished game can show what was predicted
     view.frozen = loadPredStore()[ev.id] || null;
     // pre-match there's no FotMob match page to read form from — take the last five results from
@@ -1433,7 +1463,7 @@ export async function getWidgetState(query) {
         // pass each side's opponent so the per-player projection is matchup-adjusted (home
         // players vs the away defence, and vice-versa)
         const [hp, ap] = await Promise.all([fotmobPlayerSOT(homeRef, awayRef), fotmobPlayerSOT(awayRef, homeRef)]);
-        if ((hp && hp.length) || (ap && ap.length)) view.playerProj = { home: hp || [], away: ap || [] };
+        if ((hp && hp.length) || (ap && ap.length)) { view.playerProj = { home: hp || [], away: ap || [] }; if (view.prediction) freezePrediction(ev, view.prediction, view.playerProj); }
       } catch { /* best-effort */ }
     }
     // FanDuel's own public player props (computed once): used both for the props section fallback
