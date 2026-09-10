@@ -663,6 +663,11 @@ td.lead { color: var(--text); }
 .tn em { display: block; margin-top: 3px; font: 500 8.5px/1 var(--mono); color: var(--faint); letter-spacing: .6px; font-style: normal; }
 .trt { font: 800 14px/1 var(--cd); color: var(--sub); } .trt.hi { color: var(--bet); } .trt.good { color: var(--accent); } .trt.low { color: var(--neg); }
 .tev { font: 500 9px/1.3 var(--mono); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* predictions scorecard rows */
+.ptr.pred { grid-template-columns: minmax(0, 1.4fr) 70px 80px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 120px; }
+.ptr.pred.pending { opacity: .6; }
+.ptr.pred .tn { font: 800 13px/1 var(--cd); } .ptr.pred .tn .tk-game { color: var(--text); }
+.pm { font: 800 12px/1 var(--mono); } .pm.hit { color: var(--bet); } .pm.miss { color: var(--neg); }
 .market { display: grid; gap: 12px; margin-bottom: 12px; align-items: start; }
 .market.c3 { grid-template-columns: 1.1fr 1.3fr 1fr; } .market.c2 { grid-template-columns: 1fr 1fr; } .market.c1 { grid-template-columns: 1fr; }
 .odds3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }

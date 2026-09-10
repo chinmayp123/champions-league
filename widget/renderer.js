@@ -1584,6 +1584,36 @@ function renderRecord(data) {
   if (left.childElementCount || right.childElementCount) { cards.appendChild(left); cards.appendChild(right); wrap.appendChild(cards); }
 
   // history, newest day first, as tickets
+  // the model's own scorecard: every pre-match call it froze, graded at full time
+  const pr = data.predictions;
+  if (pr && pr.rows && pr.rows.length) {
+    const ps = pr.stats, pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+    wrap.appendChild(h("div", { class: "today-head" }, [
+      h("div", {}, [h("div", { class: "eyebrow", text: "Model scorecard · pre-match calls frozen at first sight" }), h("div", { class: "vh" }, [txt("Predictions "), h("span", { class: "sub", text: ps.n ? `${ps.n} graded · ${pr.rows.length - ps.n} pending` : `${pr.rows.length} pending` })])]),
+      h("div", {}, [h("div", { class: "picks-sub", text: "result = predicted winner · score = exact scoreline" }), h("div", { class: "picks-sub", text: "Brier over 1X2: 0.67 is a flat guess, lower is better" })]),
+    ]));
+    if (ps.n) wrap.appendChild(h("div", { class: "stat-grid c5" }, [
+      tile(pct(ps.resultRate), `Result right (${ps.n})`, ps.resultRate >= 0.5 ? "up" : ""), tile(pct(ps.exactRate), "Exact score"), tile(pct(ps.over25Rate), "Over 2.5 call"), tile(pct(ps.bttsRate), "BTTS call"), tile(ps.brier.toFixed(3), "Brier · 1X2", ps.brier < 0.6 ? "up" : ""),
+    ]));
+    const hdr = h("div", { class: "ptr h pred" }, ["Game", "Predicted", "Actual", "Winner", "Over 2.5", "BTTS", "Basis"].map((t) => h("span", { text: t })));
+    const rowsEl = h("div", { class: "predrows" }, [hdr]);
+    for (const r of pr.rows.slice(0, 40)) {
+      const p = r.pred, g = r.grade;
+      const mark = (hit) => hit == null ? h("span", { class: "pm", text: "—" }) : h("span", { class: `pm ${hit ? "hit" : "miss"}`, text: hit ? "✓" : "✗" });
+      const callTxt = p.wH >= p.wD && p.wH >= p.wA ? `${r.homeAbbr} ${Math.round(p.wH * 100)}%` : p.wA >= p.wD ? `${r.awayAbbr} ${Math.round(p.wA * 100)}%` : `Draw ${Math.round(p.wD * 100)}%`;
+      rowsEl.appendChild(h("div", { class: `ptr pred${g ? "" : " pending"}` }, [
+        h("span", { class: "tn" }, [gameChip(r.game) || txt(r.game), h("em", { text: fmtDay(r.date) })]),
+        h("span", { text: `${p.ph}–${p.pa}` }),
+        h("span", { text: g ? `${r.actual.h}–${r.actual.a}${g.exact ? " ✓" : ""}` : (r.live ? "live" : "—") }),
+        h("span", {}, [txt(callTxt + " "), g ? mark(g.resultHit) : null]),
+        h("span", {}, [txt(p.pOver25 != null ? `${p.pOver25 >= 0.5 ? "over" : "under"} ${Math.round(p.pOver25 * 100)}% ` : "— "), g ? mark(g.over25Hit) : null]),
+        h("span", {}, [txt(p.pBTTS != null ? `${p.pBTTS >= 0.5 ? "yes" : "no"} ${Math.round(p.pBTTS * 100)}% ` : "— "), g ? mark(g.bttsHit) : null]),
+        h("span", { class: "tev", text: p.basis || "" }),
+      ]));
+    }
+    wrap.appendChild(h("section", { class: "card" }, [rowsEl]));
+  }
+
   wrap.appendChild(h("div", { class: "today-head" }, [h("div", { class: "vh" }, [txt("History "), h("span", { class: "sub", text: "every logged bet, newest first" })]), h("div", { class: "picks-sub", text: "▲ beat the close · ▼ worse than the close" })]));
   if (!data.days || !data.days.length) wrap.appendChild(h("div", { class: "center", text: "No bets logged yet." }));
   for (const day of data.days || []) {

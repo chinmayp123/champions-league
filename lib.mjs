@@ -989,6 +989,9 @@ export async function listMatchesData(opts = {}) {
       pred = marketPrediction(oe, hn);
     }
     if (!pred) pred = espnMarketPrediction(ev); // fallback: ESPN's inline line (works without the Odds API)
+    // freeze the slate's pre-match calls too, so games never opened still get graded. The picker's
+    // market prediction lacks totals; the match view's fuller call replaces nothing (first freeze wins)
+    if (state === "pre" && pred) freezePrediction(ev, { ...pred, basis: "market (slate)" });
     return {
       id: ev.id, date: ev.date, state,
       home: home.team.displayName, homeAbbr: home.team.abbreviation, homeScore: Number(home.score) || 0,
@@ -1054,6 +1057,83 @@ function savePregame(id, proj) {
 }
 function loadPregame(id) { const e = loadPregameStore()[id]; return e ? e.proj : null; }
 
+// ── predictions: the model's pre-match call for every game it sees, frozen the first time and
+// graded once the game is final. This is the model's own scorecard (the bet record is the
+// card's). One entry per event: { game, date, homeAbbr, awayAbbr, pred:{ph,pa,wH,wD,wA,pOver25,
+// pBTTS,basis}, frozenAt, actual:{h,a}, graded }.
+const PRED_FILE = join(COMP.betlogDir, "predictions.json");
+function loadPredStore() { try { return JSON.parse(readFileSync(PRED_FILE, "utf8")); } catch { return {}; } }
+function savePredStore(store) {
+  try {
+    if (!existsSync(dirname(PRED_FILE))) mkdirSync(dirname(PRED_FILE), { recursive: true });
+    writeFileSync(PRED_FILE, JSON.stringify(store));
+  } catch { /* best-effort */ }
+}
+// freeze once — the first pre-match look wins, so a later refresh can't quietly revise the call
+export function freezePrediction(ev, pred) {
+  if (!pred || !ev) return;
+  const store = loadPredStore();
+  const prior = store[ev.id];
+  if (prior) {
+    // the slate's market call has no totals; the fuller match-view call may fill ONLY those in
+    // (the 1X2 and scoreline stay as first frozen)
+    let filled = false;
+    if (prior.pred.pOver25 == null && pred.pOver25 != null) { prior.pred.pOver25 = pred.pOver25; filled = true; }
+    if (prior.pred.pBTTS == null && pred.pBTTS != null) { prior.pred.pBTTS = pred.pBTTS; filled = true; }
+    if (filled) savePredStore(store);
+    return;
+  }
+  const comp = ev.competitions[0];
+  const home = comp.competitors.find((t) => t.homeAway === "home"), away = comp.competitors.find((t) => t.homeAway === "away");
+  store[ev.id] = {
+    game: `${home.team.abbreviation} v ${away.team.abbreviation}`, date: ev.date,
+    homeAbbr: home.team.abbreviation, awayAbbr: away.team.abbreviation, homeLogo: home.team.logo || null, awayLogo: away.team.logo || null,
+    pred: { ph: pred.ph, pa: pred.pa, wH: pred.wH, wD: pred.wD, wA: pred.wA, pOver25: pred.pOver25 ?? null, pBTTS: pred.pBTTS ?? null, basis: pred.basis || "market" },
+    frozenAt: Date.now(), actual: null, graded: false,
+  };
+  savePredStore(store);
+}
+// grade frozen calls against the finished events in the fixture pool; returns every entry with its
+// grades plus the running tallies. Cheap (no network) — the pool is passed in.
+export function gradePredictions(events) {
+  const store = loadPredStore();
+  let changed = false;
+  for (const ev of events || []) {
+    const e = store[ev.id];
+    if (!e || e.graded) continue;
+    const comp = ev.competitions[0];
+    if (comp.status.type.state !== "post") continue;
+    const home = comp.competitors.find((t) => t.homeAway === "home"), away = comp.competitors.find((t) => t.homeAway === "away");
+    e.actual = { h: Number(home.score) || 0, a: Number(away.score) || 0 };
+    e.graded = true; changed = true;
+  }
+  if (changed) savePredStore(store);
+  const rows = Object.entries(store).map(([id, e]) => {
+    const p = e.pred, r = { id, ...e };
+    if (e.actual) {
+      const { h, a } = e.actual;
+      const result = h > a ? "home" : a > h ? "away" : "draw";
+      const call = p.wH >= p.wD && p.wH >= p.wA ? "home" : p.wA >= p.wD ? "away" : "draw";
+      const pResult = result === "home" ? p.wH : result === "away" ? p.wA : p.wD;
+      r.grade = {
+        result, call, resultHit: call === result, exact: p.ph === h && p.pa === a, pResult,
+        // Brier over the 1X2 (0 perfect, 0.667 for a flat guess)
+        brier: [["home", p.wH], ["draw", p.wD], ["away", p.wA]].reduce((s, [k, q]) => s + (q - (k === result ? 1 : 0)) ** 2, 0),
+        over25: h + a > 2.5, over25Call: p.pOver25 != null ? p.pOver25 >= 0.5 : null, over25Hit: p.pOver25 != null ? (p.pOver25 >= 0.5) === (h + a > 2.5) : null,
+        btts: h > 0 && a > 0, bttsCall: p.pBTTS != null ? p.pBTTS >= 0.5 : null, bttsHit: p.pBTTS != null ? (p.pBTTS >= 0.5) === (h > 0 && a > 0) : null,
+      };
+    }
+    return r;
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const g = rows.filter((r) => r.grade);
+  const rate = (arr, k) => { const v = arr.map((r) => r.grade[k]).filter((x) => x != null); return v.length ? v.filter(Boolean).length / v.length : null; };
+  const stats = g.length ? {
+    n: g.length, resultRate: rate(g, "resultHit"), exactRate: rate(g, "exact"), over25Rate: rate(g, "over25Hit"), bttsRate: rate(g, "bttsHit"),
+    brier: g.reduce((s, r) => s + r.grade.brier, 0) / g.length, logScore: g.reduce((s, r) => s + Math.log(Math.max(r.grade.pResult, 0.01)), 0) / g.length,
+  } : { n: 0 };
+  return { rows, stats };
+}
+
 // grade saved pregame projections against the actual final box score (corners total + total
 // shots), persisting actuals so finished games aren't refetched. Returns accuracy aggregates:
 // { corners: { n, mae, projAvg, actualAvg }, shots: {...} } — answers "are these any good?"
@@ -1106,7 +1186,8 @@ export async function getRecord() {
     await bl.settle().catch(() => {});
     const log = bl.readLog();
     const projAccuracy = await getProjectionAccuracy().catch(() => null);
-    const data = { stats: bl.stats(), recent: bl.statsRecent(7), projAccuracy, goalsBias: bl.goalsBias(), days: (log.days || []).slice().reverse() }; // newest first
+    const predictions = gradePredictions(await fixturePool().catch(() => []));
+    const data = { stats: bl.stats(), recent: bl.statsRecent(7), projAccuracy, goalsBias: bl.goalsBias(), predictions, days: (log.days || []).slice().reverse() }; // newest first
     recordCache = { at: now, data };
     return data;
   } catch (e) {
@@ -1318,6 +1399,7 @@ export async function getWidgetState(query) {
     // imports from this module, so a static import would create a load-time cycle.
     const gb = await import("./betlog.mjs").then((b) => b.goalsBias().factor).catch(() => 1);
     const view = buildMatchView(ev, sum, liveOdds, realXG, publicBetting, pregame, conditions, gb);
+    if (isPre && view.prediction) freezePrediction(ev, view.prediction);
     // league-phase matchday pill (knockout games carry a round tag instead)
     if (!view.round) view.matchday = await fotmobMatchday(homeRef, awayRef, ev.date);
     // formations, per-player ratings and the shot map for the pitch card (pre-match too — the
