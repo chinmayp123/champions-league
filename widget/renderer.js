@@ -578,7 +578,7 @@ function renderMatch(m) {
     const fav = m.odds.home.prob >= m.odds.away.prob ? [m.home.abbr, m.odds.home.ml] : [m.away.abbr, m.odds.away.ml];
     facts.push(fact(m.odds.source === "live" ? "Live ML" : "ML", `${fav[0]} ${fav[1]}`, "book"));
   }
-  if (m.xg) facts.push(fact("xG", `${m.xg.home.xg.toFixed(2)} – ${m.xg.away.xg.toFixed(2)}`));
+  if (m.xg) facts.push(fact("xG · " + m.home.abbr + " · " + m.away.abbr, `${m.xg.home.xg.toFixed(2)} – ${m.xg.away.xg.toFixed(2)}`));
   const other = (last?.matches || []).find((mt) => mt.live && mt.id !== m.id);
   if (other) { const f = fact("Also live", `${other.homeAbbr} ${other.homeScore}–${other.awayScore} ${other.awayAbbr} ${other.statusText || ""}`, "dim", () => choose(other.id)); f.classList.add("also"); facts.push(f); }
   setThird([
@@ -633,7 +633,7 @@ function renderMatch(m) {
       else tiles.push(tile(`${Math.round(Math.max(p.wH, p.wA) * 100)}%`, `${p.wH >= p.wA ? m.home.abbr : m.away.abbr} win prob`, "good"));
       if (tiles.length < 6 && p.pOver25 != null) tiles.push(tile(pctR(p.pOver25), "Over 2.5"));
       if (tiles.length < 6 && p.pBTTS != null) tiles.push(tile(pctR(p.pBTTS), "BTTS"));
-      if (tiles.length < 6) tiles.push(tile(`${p.expH.toFixed(1)}–${p.expA.toFixed(1)}`, "Expected goals (model)"));
+      if (tiles.length < 6) tiles.push(tile(`${m.home.abbr} ${p.expH.toFixed(1)} · ${m.away.abbr} ${p.expA.toFixed(1)}`, "Expected goals each · model"));
     }
     if (tiles.length) blocks.push(h("div", { class: `stat-grid c${Math.min(6, Math.max(3, tiles.length))}` }, tiles.slice(0, 6)));
     // the pitch: formations, ratings and the shot map, with hover zones for corners / goals / boxes
@@ -644,7 +644,7 @@ function renderMatch(m) {
   if (p) {
     blocks.push(h("div", { class: "label", text: `Win probability · ${expanded ? p.basis : "model"}${p.early ? " · low conf" : ""}` }));
     const pred = h("div", { class: "pred" }, [h("span", { class: "h", text: m.home.abbr }), txt(` ${p.ph} – ${p.pa} `), h("span", { class: "a", text: m.away.abbr })]);
-    if (expanded) pred.appendChild(h("span", { class: "exp", text: `expected ${p.expH.toFixed(1)}–${p.expA.toFixed(1)}` }));
+    if (expanded) pred.appendChild(h("span", { class: "exp", text: `expected goals ${m.home.abbr} ${p.expH.toFixed(1)} · ${m.away.abbr} ${p.expA.toFixed(1)}` }));
     blocks.push(pred);
     if (probHist.id === m.id && probHist.pts.length >= 3 && !pre) {
       const graph = sparkline(probHist.pts, { midline: 0.5 });
