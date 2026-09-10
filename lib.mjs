@@ -59,16 +59,31 @@ export const ml2prob = (ml) => (ml == null ? null : ml > 0 ? 100 / (ml + 100) : 
 export const fmtAmerican = (ml) => (ml == null ? "-" : ml > 0 ? `+${ml}` : `${ml}`);
 
 // --- The Odds API: live multi-book odds (FanDuel + best-of-book line shopping) ---
-// Cache to stay under the free tier's 500-request quota: refetch at most every 2 min.
-export const oddsState = { remaining: null };
+// The ONE feed that costs anything: 500 credits a month on the free tier, and the key is SHARED with
+// Pick Six. The widget polls every 30s, and with a 2-minute cache an open widget spent ~120 credits an
+// hour (2 for the events list + 2 for the tracked game's props every 2 minutes) — that is what emptied
+// the month on 2026-09-08, not the morning card, which never touches this API. Lines do not move that
+// fast: before kickoff 30 min, in play 5 min, and a finished game never again. An exhausted quota (or
+// a refused key) is remembered for the process, so nothing further is spent on it.
+export const oddsState = { remaining: null, exhausted: false, error: null };
+const ODDS_TTL = { pre: 30 * 60e3, in: 5 * 60e3, post: 6 * 3600e3 };
+export const oddsTtlFor = (state) => ODDS_TTL[state] ?? ODDS_TTL.pre;
+async function oddsRefused(res) {
+  let msg = ""; try { msg = (await res.json())?.message || ""; } catch { /* no body */ }
+  oddsState.error = `Odds API HTTP ${res.status}` + (msg ? " — " + msg : "");
+  // a spent free key answers 401 "API key is not valid"; a real quota message is 401/429 too
+  if (res.status === 401 || res.status === 429) oddsState.exhausted = true;
+  return new Error(oddsState.error);
+}
 let _oddsCache = { at: 0, events: null };
-export async function fetchOddsEvents() {
+export async function fetchOddsEvents(ttl = ODDS_TTL.pre) {
   if (!ODDS_KEY) return null;
   const now = Date.now();
-  if (_oddsCache.events && now - _oddsCache.at < 120000) return _oddsCache.events;
+  if (_oddsCache.events && now - _oddsCache.at < ttl) return _oddsCache.events;
+  if (oddsState.exhausted) return _oddsCache.events; // whatever we last saw, or null
   const url = `${ODDS_BASE}/?apiKey=${ODDS_KEY}&regions=us&markets=h2h,totals&oddsFormat=american`;
   const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
-  if (!res.ok) throw new Error(`Odds API HTTP ${res.status}`);
+  if (!res.ok) throw await oddsRefused(res);
   _oddsCache = { at: now, events: await res.json() };
   oddsState.remaining = res.headers.get("x-requests-remaining");
   return _oddsCache.events;
@@ -153,14 +168,15 @@ function parsePlayerProps(ev) {
   return { scorers, sot };
 }
 
-export async function fetchPlayerProps(oddsEventId) {
+export async function fetchPlayerProps(oddsEventId, ttl = ODDS_TTL.pre) {
   if (!ODDS_KEY || !oddsEventId) return null;
   const now = Date.now();
   const hit = _propCache.get(oddsEventId);
-  if (hit && now - hit.at < 120000) return hit.data;
+  if (hit && now - hit.at < ttl) return hit.data;
+  if (oddsState.exhausted) return hit ? hit.data : null;
   const url = `${SPORT_BASE}/events/${oddsEventId}/odds?apiKey=${ODDS_KEY}&regions=us&markets=${PROP_MARKETS}&oddsFormat=american`;
   const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
-  if (!res.ok) throw new Error(`Odds API props HTTP ${res.status}`);
+  if (!res.ok) throw await oddsRefused(res);
   oddsState.remaining = res.headers.get("x-requests-remaining");
   const data = parsePlayerProps(await res.json());
   _propCache.set(oddsEventId, { at: now, data });
@@ -1366,7 +1382,7 @@ export async function getWidgetState(query) {
         const comp = ev.competitions[0];
         const h = comp.competitors.find((t) => t.homeAway === "home");
         const a = comp.competitors.find((t) => t.homeAway === "away");
-        liveOdds = matchOdds(await fetchOddsEvents(), h.team.displayName, a.team.displayName);
+        liveOdds = matchOdds(await fetchOddsEvents(oddsTtlFor(comp.status?.type?.state)), h.team.displayName, a.team.displayName);
       } catch { /* fall back to ESPN pre-match */ }
     }
     const comp0 = ev.competitions[0];
@@ -1419,7 +1435,8 @@ export async function getWidgetState(query) {
     // player props: prefer The Odds API (multi-book, de-vigged consensus). When it's
     // unavailable (no key / quota / 401), fall back to FanDuel's own public prices.
     let props = null;
-    if (liveOdds?.ev?.id) { try { props = await fetchPlayerProps(liveOdds.ev.id); } catch { props = null; } }
+    const gameState = comp0.status?.type?.state;
+    if (liveOdds?.ev?.id && gameState !== "post") { try { props = await fetchPlayerProps(liveOdds.ev.id, oddsTtlFor(gameState)); } catch { props = null; } }
     if ((!props || (!props.scorers?.length && !props.sot?.length)) && fd && (fd.scorers.length || fd.sot.length)) props = mapFanduelProps(fd);
     view.playerProps = props;
     // FanDuel anytime-goalscorer prices [{ player, ml, implied }] for the predicted-scorer compare

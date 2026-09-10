@@ -13,7 +13,9 @@ current free stack provides.
   it's best-effort: any failure falls back to the proxy silently. See note below.
 - **The Odds API** (key in `odds.config.json`) — moneyline + totals across US books, and
   **anytime-scorer / shots-on-target player props** per event. *No saves or corners markets
-  for soccer.* Free tier = 500 requests/month.
+  for soccer.* Free tier = 500 requests/month, and the key is SHARED with Pick Six. The widget is the only
+  spender (the morning card never calls it): events list 2 credits + tracked game props 2, cached 30 min
+  pre-match, 5 min in play, never again once final; an exhausted key is remembered for the process.
 - **FanDuel public sportsbook API** (free, no login — `fanduel.mjs`) — the same JSON FanDuel's
   own website fetches with a public app key (`_ak`). We use it for **total match corners**
   over/under (a real corner market the other feeds lack) and, as a **fallback for player props**
