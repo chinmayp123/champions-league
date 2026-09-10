@@ -136,18 +136,57 @@ function parseForm(tf) {
 
 const orientPair = (pair, aligned) => (!pair ? null : aligned ? pair : { home: pair.away, away: pair.home });
 
-// A team's recent WC form, AVERAGED over its last few finished matches (default 3) — far more
+// ── a club's recent matches across EVERY competition ────────────────────────────────────────
+// On matchday 1 nobody has Champions League history, so form, priors and scorer projections were
+// empty. FotMob's team page lists the club's whole season (league, cup, Europe) with the same
+// match-page links the xG parser reads, so recent form comes from wherever the club last played.
+// Friendlies are skipped. Falls back to the competition's own fixture list if the page fails.
+const TEAM_TTL = 30 * 60 * 1000;
+const _teams = new Map(); // teamId -> { at, fixtures }
+async function fetchTeamFixtures(teamId) {
+  const now = Date.now();
+  const hit = _teams.get(teamId);
+  if (hit && now - hit.at < TEAM_TTL) return hit.fixtures;
+  const pp = nextData(await getHtml(`https://www.fotmob.com/teams/${teamId}`));
+  const team = pp?.fallback?.[`team-${teamId}`];
+  const all = team?.fixtures?.allFixtures?.fixtures || [];
+  const fixtures = all.map((f) => ({
+    id: String(f.id), pageUrl: f.pageUrl,
+    home: { id: f.home?.id, name: f.home?.name }, away: { id: f.away?.id, name: f.away?.name },
+    utcTime: f.status?.utcTime || null, finished: !!f.status?.finished,
+    competition: f.tournament?.name || "", friendly: /friendl/i.test(f.tournament?.name || ""),
+  }));
+  _teams.set(teamId, { at: now, fixtures });
+  return fixtures;
+}
+// FotMob id for an ESPN ref { name, abbr }, from the competition's fixture list
+async function teamId(team) {
+  const fixtures = await fetchFotmobFixtures();
+  for (const f of fixtures) { if (sideMatch(f.home.name, team)) return f.home.id; if (sideMatch(f.away.name, team)) return f.away.id; }
+  return null;
+}
+// the club's last `lookback` finished competitive matches, newest first, from any competition
+export async function recentMatches(team, lookback = 3) {
+  const ucl = (await fetchFotmobFixtures()).filter((f) => f.finished && (sideMatch(f.home.name, team) || sideMatch(f.away.name, team)));
+  let pool = ucl;
+  try {
+    const id = await teamId(team);
+    if (id) {
+      const all = (await fetchTeamFixtures(id)).filter((f) => f.finished && !f.friendly && f.pageUrl);
+      if (all.length) pool = all;
+    }
+  } catch { /* team page unavailable — the competition list will do */ }
+  return pool.sort((a, b) => String(b.utcTime || "").localeCompare(String(a.utcTime || ""))).slice(0, lookback);
+}
+
+// A team's recent form, AVERAGED over its last few finished matches (default 3, any competition) — far more
 // stable than a single game, and it actually picks up scoring outbursts/droughts. Rates are
 // oriented as for/against and include REAL goals (from the shotmap), not just xG, so a 7-goal
 // blowout lifts the attack estimate the way the eye test expects. null if no finished match.
 // team is { name, abbr }.
 export async function fotmobTeamRates(team, lookback = 3) {
   try {
-    const fixtures = await fetchFotmobFixtures();
-    const played = fixtures
-      .filter((f) => f.finished && (sideMatch(f.home.name, team) || sideMatch(f.away.name, team)))
-      .sort((a, b) => String(b.utcTime || "").localeCompare(String(a.utcTime || "")))
-      .slice(0, lookback);
+    const played = await recentMatches(team, lookback);
     if (!played.length) return null;
     const acc = { xgFor: [], xgAgainst: [], goalsFor: [], goalsAgainst: [], cornersFor: [], cornersAgainst: [], sotFor: [], sotAgainst: [], shotsFor: [], shotsAgainst: [] };
     for (const f of played) {
@@ -169,7 +208,7 @@ export async function fotmobTeamRates(team, lookback = 3) {
     const games = Math.max(acc.xgFor.length, acc.goalsFor.length, acc.shotsFor.length);
     if (!games) return null;
     return {
-      games,
+      games, competitions: [...new Set(played.map((f) => f.competition).filter(Boolean))],
       xgFor: avg(acc.xgFor, 1.3), xgAgainst: avg(acc.xgAgainst, 1.3),
       goalsFor: avg(acc.goalsFor, 1.3), goalsAgainst: avg(acc.goalsAgainst, 1.3),
       cornersFor: avg(acc.cornersFor, 5), cornersAgainst: avg(acc.cornersAgainst, 5),
@@ -189,11 +228,7 @@ export async function fotmobTeamRates(team, lookback = 3) {
 // DISPLAY-ONLY: there's no free way to de-vig player props into a fair line, so it informs the eye.
 export async function fotmobPlayerSOT(team, opponent = null, lookback = 3) {
   try {
-    const fixtures = await fetchFotmobFixtures();
-    const played = fixtures
-      .filter((f) => f.finished && (sideMatch(f.home.name, team) || sideMatch(f.away.name, team)))
-      .sort((a, b) => String(b.utcTime || "").localeCompare(String(a.utcTime || "")))
-      .slice(0, lookback);
+    const played = await recentMatches(team, lookback);
     if (!played.length) return null;
     const agg = new Map(); // name -> { name, sot, shots, xg }
     let mp = 0; // matches with usable shotmap data

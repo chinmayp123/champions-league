@@ -671,7 +671,7 @@ export async function pregameProjections(home, away) {
   const sotA = mean(shrink(ar.sotFor, 4), shrink(hr.sotAgainst, 4));
   const pOverSH = 1 - poissonCdf(Math.floor(sLine), savesH), pOverSA = 1 - poissonCdf(Math.floor(sLine), savesA);
   return {
-    basis: `recent form (${Math.max(hr.games, ar.games)}g)`,
+    basis: `recent form (${Math.max(hr.games, ar.games)}g · ${[...new Set([...(hr.competitions || []), ...(ar.competitions || [])])].slice(0, 2).join(", ") || "all comps"})`,
     shots: { home: { shots: shotsH, sot: sotH }, away: { shots: shotsA, sot: sotA } },
     corners: { home: cH, away: cA, total: cTotal, line: cLine, pOver: pOverC, odds: probToAmerican(pOverC) },
     saves: {
