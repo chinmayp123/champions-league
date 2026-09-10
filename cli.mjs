@@ -306,7 +306,7 @@ async function listMatches({ days = 3 } = {}) {
     )
   );
 
-  console.log(c("bold", "\n  FIFA World Cup 2026\n"));
+  console.log(c("bold", `\n  ${COMP.title}\n`));
   let curDay = "";
   for (const ev of events) {
     const day = new Date(ev.date).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
@@ -343,7 +343,7 @@ async function showGroups() {
   const j = await allStandings();
   const groups = j.children || [];
   if (!groups.length) return console.log("No standings available yet.");
-  console.log(c("bold", "\n  FIFA World Cup 2026 — Group Standings") + c("dim", "   (▲ = top 2, advance)\n"));
+  console.log(c("bold", `\n  ${COMP.title} — Standings`) + c("dim", "   (▲ = advancing)\n"));
   for (const g of groups) {
     console.log(renderGroupTable(g.name, g.standings?.entries || []));
     console.log("");
