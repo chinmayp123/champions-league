@@ -152,7 +152,7 @@ async function fetchTeamFixtures(teamId) {
   const all = team?.fixtures?.allFixtures?.fixtures || [];
   const fixtures = all.map((f) => ({
     id: String(f.id), pageUrl: f.pageUrl,
-    home: { id: f.home?.id, name: f.home?.name }, away: { id: f.away?.id, name: f.away?.name },
+    home: { id: f.home?.id, name: f.home?.name, score: f.home?.score ?? null }, away: { id: f.away?.id, name: f.away?.name, score: f.away?.score ?? null },
     utcTime: f.status?.utcTime || null, finished: !!f.status?.finished,
     competition: f.tournament?.name || "", friendly: /friendl/i.test(f.tournament?.name || ""),
   }));
@@ -177,6 +177,17 @@ export async function recentMatches(team, lookback = 3) {
     }
   } catch { /* team page unavailable — the competition list will do */ }
   return pool.sort((a, b) => String(b.utcTime || "").localeCompare(String(a.utcTime || ""))).slice(0, lookback);
+}
+
+// W/D/L strip for the last `n` competitive games in any competition, oldest → newest
+export async function fotmobRecentForm(team, n = 5) {
+  try {
+    const games = (await recentMatches(team, n)).filter((f) => f.home.score != null && f.away.score != null);
+    return games.reverse().map((f) => {
+      const mine = sideMatch(f.home.name, team) ? [f.home.score, f.away.score] : [f.away.score, f.home.score];
+      return mine[0] > mine[1] ? "W" : mine[0] < mine[1] ? "L" : "D";
+    });
+  } catch { return []; }
 }
 
 // A team's recent form, AVERAGED over its last few finished matches (default 3, any competition) — far more

@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday, fotmobPitch } from "./fotmob.mjs";
+import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday, fotmobPitch, fotmobRecentForm } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelProps } from "./fanduel.mjs";
 import { COMP, isPhaseSlug, compMeta, clubLeague, readConfig } from "./competition.mjs";
@@ -1415,6 +1415,12 @@ export async function getWidgetState(query) {
     if (isPre && view.prediction) freezePrediction(ev, view.prediction);
     // the frozen pre-match call rides along so a live or finished game can show what was predicted
     view.frozen = loadPredStore()[ev.id] || null;
+    // pre-match there's no FotMob match page to read form from — take the last five results from
+    // the clubs' own fixture lists (any competition)
+    if (!view.form) {
+      const [fh, fa] = await Promise.all([fotmobRecentForm(homeRef), fotmobRecentForm(awayRef)]);
+      if (fh.length || fa.length) view.form = { home: fh, away: fa };
+    }
     // league-phase matchday pill (knockout games carry a round tag instead)
     if (!view.round) view.matchday = await fotmobMatchday(homeRef, awayRef, ev.date);
     // formations, per-player ratings and the shot map for the pitch card (pre-match too — the
