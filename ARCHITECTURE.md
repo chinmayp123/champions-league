@@ -261,6 +261,9 @@ Firebase: project `champions-league-a650f`, Firestore `(default)` Standard in `n
 **First freeze wins.** The first pre-match sight of a game locks the call so a later refresh
 can't quietly revise it; subsequent calls may only *fill in* fields the first one lacked
 (the slate's market call has no totals or scorers, the fuller match-view call does).
+Nothing freezes more than **48 hours before kickoff** (`FREEZE_HORIZON_H`): the website's
+publisher sees every fixture weeks ahead, and a call locked before lines and team news exist
+would poison the training set.
 `gradePredictions()` grades finished games from the box score, and scorers from the
 finished game's shot map. This file is the training set for the engine rewrite — treat it
 as append-only data, never regenerate it wholesale.

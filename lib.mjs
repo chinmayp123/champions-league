@@ -1093,8 +1093,13 @@ function loadPregame(id) { const e = loadPregameStore()[id]; return e ? e.proj :
 function loadPredStore() { return storeGet("predictions", {}); }
 function savePredStore(store) { try { storeSet("predictions", store); } catch { /* best-effort */ } }
 // freeze once — the first pre-match look wins, so a later refresh can't quietly revise the call
+// ...but only inside FREEZE_HORIZON_H of kickoff. "First sight" used to mean someone opening the
+// widget near the game; the website's publisher sees every fixture the moment it enters the pool,
+// weeks out, and would lock a call made before lines, form or team news existed.
+const FREEZE_HORIZON_H = 48;
 export function freezePrediction(ev, pred, scorers = null) {
   if (!pred || !ev) return;
+  if (Date.parse(ev.date) - Date.now() > FREEZE_HORIZON_H * 3600e3) return;
   const store = loadPredStore();
   const prior = store[ev.id];
   const packScorers = (pp) => pp ? { home: (pp.home || []).filter((p) => p.scoreProb > 0).slice(0, 6).map((p) => ({ name: p.name, p: p.scoreProb })), away: (pp.away || []).filter((p) => p.scoreProb > 0).slice(0, 6).map((p) => ({ name: p.name, p: p.scoreProb })) } : null;
