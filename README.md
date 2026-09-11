@@ -1,8 +1,13 @@
 # Starball Lab
 
-A desktop match tracker and betting harness for the **2026-27 UEFA Champions League**: live
+A match tracker and betting harness for the **2026-27 UEFA Champions League**: live
 scores, real shot-level xG, lineups on a pitch, a model that prices every market, a paper
 bet card that grades itself, and a scorecard that judges the model.
+
+**On the web:** [starball-lab.vercel.app](https://starball-lab.vercel.app) ·
+[chinmayp123.github.io/champions-league](https://chinmayp123.github.io/champions-league/) —
+the same front end as the desktop widget (below), fed by Firestore. Match data is public; the
+bet record, the day's card and slip tracking need the owner's Google sign-in.
 
 Zero runtime dependencies — Node 18+ and Electron. ESPN, FotMob, FanDuel and Action Network
 are all keyless; two optional keys unlock cross-book line shopping.
@@ -36,6 +41,27 @@ node cli.mjs        # terminal tracker (same data layer)
 node morning.mjs    # build + record today's card (what the 10:00 task runs)
 npm run dist        # Windows installer into dist/
 ```
+
+---
+
+## The website
+
+The browser can't run the data layer (the feeds refuse cross-origin calls and the odds keys
+would be public), so it runs elsewhere, all on free tiers:
+
+- **GitHub Actions** (`.github/workflows/publish.yml`, every 5 minutes) runs
+  `publisher/publish.mjs`: the slate, match views, table and record without odds keys, then a
+  rationed keyed step for the 10:00 Pacific card, the builder and closing prices. It writes
+  to **Firestore** (`champions-league-a650f`, locked down by `firestore.rules`).
+- **Vercel** (`api/state.mjs`) builds a fresh match view on demand for a game that's live or
+  about to be, since GitHub starts cron runs late.
+- **`web/build.mjs`** assembles the site from `widget/renderer.js`, `style.css` and
+  `index.html`; `web/wc.js` stands in for the Electron bridge. Pages builds it on push;
+  Vercel builds it on `vercel deploy --prod`.
+
+The owner signs in with Google, and the account is enrolled once with
+`node publisher/add-owner.mjs <uid>` (the Record tab shows the uid). Full detail in
+[ARCHITECTURE.md](ARCHITECTURE.md#the-website--github-pages--firebase-free-tier--vercel).
 
 ---
 
