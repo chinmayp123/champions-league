@@ -981,8 +981,17 @@ function espnMarketPrediction(ev) {
 // the widget's fixture pool: recent days (so finished games stay viewable) through the next
 // matchweeks. Window sizes are per competition — a club competition plays Tue–Thu every 2–3
 // weeks, so it looks weeks ahead where the WC looked days. One ranged ESPN call, de-duped.
+// when the window holds nothing still to play, look this far ahead for the next matchday instead
+const POOL_REACH_DAYS = 60;
 export async function fixturePool({ back = COMP.lookBackDays, ahead = COMP.lookAheadDays } = {}) {
-  const board = await scoreboardRange(ymd(-back), ymd(ahead)).catch(() => ({ events: [] }));
+  let board = await scoreboardRange(ymd(-back), ymd(ahead)).catch(() => ({ events: [] }));
+  // league-phase matchdays can sit over a month apart (UCL 26/27: MD1 8–10 Sep, MD2 13–14 Oct), which
+  // left the slate with no upcoming game and the table with no "next" fixture between them
+  const toPlay = (b) => (b.events || []).some((e) => e.competitions?.[0]?.status?.type?.state !== "post");
+  if (!toPlay(board) && ahead < POOL_REACH_DAYS) {
+    const far = await scoreboardRange(ymd(-back), ymd(POOL_REACH_DAYS)).catch(() => null);
+    if (far && toPlay(far)) board = far;
+  }
   const seen = new Set(), events = [];
   for (const ev of board.events || []) if (!seen.has(ev.id)) { seen.add(ev.id); events.push(ev); }
   events.sort((a, b) => new Date(a.date) - new Date(b.date));
