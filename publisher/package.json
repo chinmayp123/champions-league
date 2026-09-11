@@ -1,0 +1,14 @@
+{
+  "name": "starball-lab-publisher",
+  "description": "Runs the Starball Lab data layer on a GitHub Actions cron and writes the views to Firestore for the Pages site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "live": "node publish.mjs live",
+    "keyed": "node publish.mjs keyed",
+    "import-logs": "node import-logs.mjs"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0"
+  }
+}

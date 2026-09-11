@@ -1,0 +1,194 @@
+rules_version = '2';
+
+// ===============================================================
+// Starball Lab — Firestore Security Rules (prototype; review before sharing widely)
+// ===============================================================
+//
+// Who talks to Firestore:
+//   · the PUBLISHER — publisher/publish.mjs on the GitHub Actions cron, signed in with email/password
+//     as publisher@champions-league-a650f.firebaseapp.com (uid pinned below). The only writer.
+//   · the PAGE (GitHub Pages) — anyone may read the public match data; the OWNER signs in with Google
+//     to read the private record + card and to submit tracked slips.
+//   Email/password sign-up is enabled for the publisher, so ANYONE can make an account with the public
+//   web key: being signed in must never grant anything on its own.
+//
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Snapshot docs (written by the publisher, JSON text the page parses):
+//   - json: string (required, <= 1,000,000 chars) - the view, JSON-encoded
+//   - bytes: int (required, >= 0) - UTF-8 size of json
+//   - publishedAt: timestamp (required, server time of the write)
+//
+// Collection: competitions/{comp}/view        comp: e.g. "ucl-2026-27"
+// Document ID: slate | standings | menu | status        PUBLIC read
+// Fields: snapshot doc
+//
+// Collection: competitions/{comp}/games
+// Document ID: ESPN event id (digits)                   PUBLIC read
+// Fields: snapshot doc (one match view)
+//
+// Collection: competitions/{comp}/private
+// Document ID: record | parlays                         OWNER read (bet record, stakes, the day's picks)
+// Fields: snapshot doc
+//
+// Collection: competitions/{comp}/publisher
+// Document ID: jobs                                     PUBLISHER only (its run schedule)
+// Fields: snapshot doc
+//
+// Collection: competitions/{comp}/store
+// Document ID: log | predictions | pregame              PUBLISHER only (store.mjs records)
+// Fields:
+//   - gz: bytes (required, <= 1,000,000) - gzipped JSON record
+//   - bytes: int (required, >= 0) - uncompressed size
+//   - savedAt: timestamp (required, server time of the write)
+//
+// Collection: competitions/{comp}/slips
+// Document ID: auto                                     OWNER create · PUBLISHER read + delete · no updates
+// Fields:
+//   - payload: string (required, 2..20,000 chars) - JSON { legs, stake, date }; betlog.trackParlay
+//     re-validates it before anything is logged
+//   - uid: string (required, immutable) - the creator; must be the signed-in owner
+//   - createdAt: timestamp (required, server time of the create)
+//
+// Collection: owners
+// Document ID: the owner's Firebase uid                 self read · PUBLISHER create/delete
+// Fields:
+//   - addedAt: timestamp (required, server time of the create)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // the GitHub Actions publisher account
+    function isPublisher() {
+      return isAuthenticated() && request.auth.uid == 'T0p149P4F9Xc2TWgvC7aqsuA7f62';
+    }
+
+    // a verified Google account the publisher has enrolled in /owners (keeps owner emails out of this public file)
+    function isOwner() {
+      return isAuthenticated()
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && exists(/databases/$(database)/documents/owners/$(request.auth.uid));
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidComp(comp) {
+      return comp.matches('^[a-z]+-[0-9]{4}-[0-9]{2}$');
+    }
+
+    // ===============================================================
+    // Domain Validators (used on both create and update)
+    // ===============================================================
+
+    function isValidSnapshot(data) {
+      return hasOnlyAllowedFields(['json', 'bytes', 'publishedAt'])
+        && hasRequiredFields(['json', 'bytes', 'publishedAt'])
+        && data.json is string && data.json.size() <= 1000000
+        && data.bytes is int && data.bytes >= 0 && data.bytes <= 4000000
+        && data.publishedAt == request.time;
+    }
+
+    function isValidRecord(data) {
+      return hasOnlyAllowedFields(['gz', 'bytes', 'savedAt'])
+        && hasRequiredFields(['gz', 'bytes', 'savedAt'])
+        && data.gz is bytes && data.gz.size() <= 1000000
+        && data.bytes is int && data.bytes >= 0 && data.bytes <= 50000000
+        && data.savedAt == request.time;
+    }
+
+    function isValidSlip(data) {
+      return hasOnlyAllowedFields(['payload', 'uid', 'createdAt'])
+        && hasRequiredFields(['payload', 'uid', 'createdAt'])
+        && data.payload is string && data.payload.size() >= 2 && data.payload.size() <= 20000
+        && data.uid == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    function isValidOwner(data) {
+      return hasOnlyAllowedFields(['addedAt'])
+        && hasRequiredFields(['addedAt'])
+        && data.addedAt == request.time;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /competitions/{comp} {
+
+      // public match data: the slate, the table, the builder menu, publisher status
+      match /view/{docId} {
+        allow read: if true;
+        allow create, update: if isPublisher() && isValidComp(comp)
+          && docId in ['slate', 'standings', 'menu', 'status']
+          && isValidSnapshot(request.resource.data);
+      }
+
+      // public match views, one per ESPN event
+      match /games/{eventId} {
+        allow read: if true;
+        allow create, update: if isPublisher() && isValidComp(comp)
+          && eventId.matches('^[0-9]{1,12}$')
+          && isValidSnapshot(request.resource.data);
+        allow delete: if isPublisher();
+      }
+
+      // the bet record and the day's card — the owner's own picks and results
+      match /private/{docId} {
+        allow read: if isOwner() || isPublisher();
+        allow create, update: if isPublisher() && isValidComp(comp)
+          && docId in ['record', 'parlays']
+          && isValidSnapshot(request.resource.data);
+      }
+
+      // the publisher's run schedule
+      match /publisher/{docId} {
+        allow read: if isPublisher();
+        allow create, update: if isPublisher() && isValidComp(comp)
+          && docId == 'jobs'
+          && isValidSnapshot(request.resource.data);
+      }
+
+      // store.mjs records: bet log, predictions scorecard, pregame snapshots
+      match /store/{name} {
+        allow read: if isPublisher();
+        allow create, update: if isPublisher() && isValidComp(comp)
+          && name in ['log', 'predictions', 'pregame']
+          && isValidRecord(request.resource.data);
+      }
+
+      // parlays the owner tracks on the page; the publisher logs them and deletes the slip
+      match /slips/{slipId} {
+        allow read: if isPublisher();
+        allow create: if isOwner() && isValidComp(comp) && isValidSlip(request.resource.data);
+        allow delete: if isPublisher();
+      }
+    }
+
+    // owner enrolment: only the publisher adds or removes owners; an owner can see their own entry
+    match /owners/{uid} {
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow create: if isPublisher() && isValidOwner(request.resource.data);
+      allow delete: if isPublisher();
+    }
+  }
+}

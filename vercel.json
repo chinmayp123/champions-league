@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm ci --prefix publisher",
+  "buildCommand": "node web/build.mjs",
+  "outputDirectory": "site",
+  "functions": {
+    "api/state.mjs": { "maxDuration": 60 }
+  }
+}

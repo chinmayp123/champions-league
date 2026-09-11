@@ -204,6 +204,45 @@ Under `DATA_DIR` (repo when run from source, per-user app data when installed):
 
 Each competition keeps its own folder, so calibrations never bleed across tournaments.
 
+### Where the records live — `store.mjs`
+`log`, `predictions` and `pregame` go through `store.mjs`'s synchronous `get`/`set`, never `fs`.
+By default that is the files above (widget, `cli.mjs`, `morning.mjs`). The website's publisher
+calls `useRemote()` with a Firestore backend: `load()` pulls every record into memory, the data
+layer reads and writes the in-memory copies, `save()` writes back only the records that changed
+(gzipped JSON in a bytes field at `competitions/<COMP.key>/store/<name>`). The publisher is the
+only writer — one workflow run at a time — so there's no merge logic. `latest.txt` is file-only.
+
+---
+
+## The website — GitHub Pages + Firebase (free tier) + Vercel
+
+The browser can't run the data layer (the feeds refuse cross-origin calls, the odds keys would be
+public), and the Firebase project stays on the free Spark plan (no Cloud Functions). So:
+
+```
+ GitHub Actions cron (5 min)            Vercel function (on demand)
+ publisher/publish.mjs live · keyed     api/state.mjs ?q=<event>
+        │ writes views + records               │ fresh match view, read-only
+        ▼                                      │
+   Firestore  competitions/<COMP.key>/…        │
+        │ onSnapshot / getDoc                  │ fetch, polled 30 s live
+        └──────────────► web/wc.js ◄───────────┘
+                     (window.wc for renderer.js)  →  GitHub Pages / Vercel
+```
+
+| Piece | What |
+|---|---|
+| `publisher/publish.mjs` + `.github/workflows/publish.yml` | Every 5 min (GitHub often runs it late). `live` — no odds keys: logs slips, publishes the slate, rebuilds match views by urgency (live every run, <2 h to kickoff every run, <36 h every 30 min, finished at FT + once 2 h later) within a 150 s budget, the table every 30 min, the record hourly or when something finished. `keyed` — the only step with the keys: the 10:00 America/Los_Angeles card (settled, recorded, published with the builder), one card/builder refresh ≤90 min before the day's first kickoff, closing prices only for pending legs inside the CLV window, at most every 30 min. The schedule lives in `publisher/jobs`, because every run is a fresh process and the in-memory TTLs protect nothing. |
+| `api/state.mjs` (Vercel, `vercel.json`) | `GET /api/state?q=<ESPN id>` → `lib.getWidgetState` on demand. Loads the records (frozen call, pregame snapshot, goals bias) but never saves them; no odds keys, so traffic can't spend quota. CDN `s-maxage=20`. |
+| `web/build.mjs` → `site/` | assembles the site from `widget/renderer.js`, `style.css`, `icon.png` and a transformed `index.html` (browser CSP, `wc.js` instead of the renderer tag, a sign-in button) — the widget's front end stays the single source. Run by `.github/workflows/pages.yml` and Vercel's build. |
+| `web/wc.js` | `window.wc` for the browser: slate + match view from Firestore snapshots, the live function for a game that's live / ≤90 min out / just finished, the table and builder from `view/*`, the card and record from `private/*` (owner), `trackParlay` queues a `slips` doc the next run logs. Expand is a toggle; pin/hide/quit are no-ops. |
+| `firestore.rules` | public read `view/{slate,standings,menu,status}` and `games/*`; owner read `private/{record,parlays}`; publisher-only `store/*` and `publisher/jobs`; slips created by the owner (strict schema), read + deleted by the publisher; `owners/{uid}` enrolled only by the publisher. Every write validated. |
+| Auth | Google sign-in for the owner; email/password only for the publisher account (uid pinned in the rules). Enrol an owner: `node publisher/add-owner.mjs <uid>` (the page shows the uid). |
+| Secrets | GitHub: `ODDS_API_KEY`, `ODDSPAPI_KEY`, `STARBALL_PUBLISHER_EMAIL`, `STARBALL_PUBLISHER_PASSWORD`. Vercel: the two publisher ones. Locally: `publisher/credentials.json` (gitignored). |
+| One-offs | `node publisher/import-logs.mjs` copied the desktop records into Firestore. |
+
+Firebase: project `champions-league-a650f`, Firestore `(default)` Standard in `nam5`.
+
 ### The predictions store — how the model gets judged
 `predictions.json` is one entry per event:
 
@@ -243,6 +282,10 @@ Break these and something silently rots:
    says so — see the honest-bar section in MODEL.md.
 8. **API quotas are shared** with another project. The Odds API free tier is 500
    req/month and OddsPapi 250; the morning card must never call them per-game in a loop.
+9. **Records go through `store.mjs`.** No `fs` reads or writes of the bet log, predictions or
+   pregame snapshots anywhere else — the website's publisher keeps them in Firestore.
+10. **Odds keys only in the rationed `keyed` step.** The `live` step and the Vercel function run
+   keyless; a fresh process per run means an in-memory TTL is no quota protection.
 
 ---
 

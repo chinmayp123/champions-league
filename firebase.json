@@ -1,0 +1,17 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json",
+    "location": "nam5"
+  },
+  "auth": {
+    "authorizedDomains": ["localhost", "chinmayp123.github.io", "starball-lab.vercel.app"],
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Starball Lab",
+        "supportEmail": "chingod2020@gmail.com"
+      }
+    }
+  }
+}

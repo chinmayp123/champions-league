@@ -1,0 +1,13 @@
+# never upload keys, logins or the personal bet log
+odds.config.json
+publisher/credentials.json
+.env
+bets/
+
+# not needed to build the site or run api/state.mjs
+node_modules/
+publisher/node_modules/
+dist/
+site/
+Picture of app evolving/
+*.log

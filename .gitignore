@@ -7,6 +7,15 @@ bets/
 
 node_modules/
 
+# firebase: the publisher account's local login (publisher/firestore.mjs), CLI caches/logs
+publisher/credentials.json
+.firebase/
+# the built website (web/build.mjs) and the Vercel CLI's project link
+site/
+.vercel/
+firebase-debug*.log
+firestore-debug.log
+
 # scratch / build
 mockup.html
 .playwright-mcp/
@@ -15,3 +24,6 @@ dist/
 # local morning-routine launchers (machine-specific paths)
 run-morning.bat
 run-morning.vbs
+
+.vercel
+.env*

@@ -2,28 +2,17 @@
 // calibration. The per-leg model probabilities (not just parlay win/loss) are what "trains"
 // the model: every leg is a probability-vs-outcome data point for the calibration loop.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
 import { summary, statMap, ml2prob, poissonCdf } from "./lib.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelBTTS } from "./fanduel.mjs";
 import { oddspapiBTTS, oddspapiSides } from "./oddspapi.mjs";
-import { COMP } from "./competition.mjs";
+import { get as storeGet, set as storeSet } from "./store.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-// per-competition log dir so a new tournament starts a clean record (its calibrations must not
-// inherit another competition's biases) while the old one stays on disk
-const LOG_DIR = COMP.betlogDir;
-const LOG_FILE = join(LOG_DIR, "log.json");
-
-function read() {
-  try { return JSON.parse(readFileSync(LOG_FILE, "utf8")); } catch { return { days: [] }; }
-}
-function write(data) {
-  if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
-  writeFileSync(LOG_FILE, JSON.stringify(data, null, 2));
-}
+// the log is per competition, so a new tournament starts a clean record (its calibrations must not
+// inherit another competition's biases). store.mjs keeps it in bets/<competition>/log.json on disk,
+// or in Firestore when this runs as the Cloud Functions backend.
+function read() { return storeGet("log", { days: [] }); }
+function write(data) { storeSet("log", data); }
 
 // append a day's bets (from generateDailyParlays). Only the straight SINGLES are tracked — the
 // for-fun longshot is display-only and never logged, so the record/calibration reflect the real

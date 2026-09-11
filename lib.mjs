@@ -3,9 +3,7 @@
 // fetching, odds, predictions, keeper-saves model, and betting reads live in ONE place.
 // Everything here returns plain data — no terminal ANSI, no DOM — so any front end can use it.
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { get as storeGet, set as storeSet } from "./store.mjs";
 import { fotmobXG, fotmobTeamRates, fetchFotmobFixtures, fotmobPlayerSOT, fotmobMatchday, fotmobPitch, fotmobRecentForm } from "./fotmob.mjs";
 import { actionPublicBetting } from "./actionnetwork.mjs";
 import { fanduelProps } from "./fanduel.mjs";
@@ -1064,16 +1062,17 @@ function mapFanduelProps(fd) {
   };
 }
 
-// pregame projections are only computed before kickoff; snapshot them to disk so we can show
-// them again (to compare against the live/final stats) once the game has started. Keyed by event.
-const PREGAME_FILE = join(COMP.betlogDir, "pregame.json");
-function loadPregameStore() { try { return JSON.parse(readFileSync(PREGAME_FILE, "utf8")); } catch { return {}; } }
+// pregame projections are only computed before kickoff; snapshot them (store.mjs: disk or Firestore)
+// so we can show them again (to compare against the live/final stats) once the game has started.
+// Keyed by event. An unchanged projection isn't re-saved — the page polls every 30 s, and on
+// Firestore every save is a billed write.
+function loadPregameStore() { return storeGet("pregame", {}); }
 function savePregame(id, proj) {
   try {
     const store = loadPregameStore();
+    if (store[id] && JSON.stringify(store[id].proj) === JSON.stringify(proj)) return;
     store[id] = { savedAt: Date.now(), proj };
-    if (!existsSync(dirname(PREGAME_FILE))) mkdirSync(dirname(PREGAME_FILE), { recursive: true });
-    writeFileSync(PREGAME_FILE, JSON.stringify(store));
+    storeSet("pregame", store);
   } catch { /* best-effort */ }
 }
 function loadPregame(id) { const e = loadPregameStore()[id]; return e ? e.proj : null; }
@@ -1082,14 +1081,8 @@ function loadPregame(id) { const e = loadPregameStore()[id]; return e ? e.proj :
 // graded once the game is final. This is the model's own scorecard (the bet record is the
 // card's). One entry per event: { game, date, homeAbbr, awayAbbr, pred:{ph,pa,wH,wD,wA,pOver25,
 // pBTTS,basis}, frozenAt, actual:{h,a}, graded }.
-const PRED_FILE = join(COMP.betlogDir, "predictions.json");
-function loadPredStore() { try { return JSON.parse(readFileSync(PRED_FILE, "utf8")); } catch { return {}; } }
-function savePredStore(store) {
-  try {
-    if (!existsSync(dirname(PRED_FILE))) mkdirSync(dirname(PRED_FILE), { recursive: true });
-    writeFileSync(PRED_FILE, JSON.stringify(store));
-  } catch { /* best-effort */ }
-}
+function loadPredStore() { return storeGet("predictions", {}); }
+function savePredStore(store) { try { storeSet("predictions", store); } catch { /* best-effort */ } }
 // freeze once — the first pre-match look wins, so a later refresh can't quietly revise the call
 export function freezePrediction(ev, pred, scorers = null) {
   if (!pred || !ev) return;
@@ -1205,7 +1198,7 @@ export async function getProjectionAccuracy() {
       e.graded = true; changed = true;
     } catch { /* not final / fetch failed */ }
   }
-  if (changed) { try { writeFileSync(PREGAME_FILE, JSON.stringify(store)); } catch { /* ignore */ } }
+  if (changed) { try { storeSet("pregame", store); } catch { /* ignore */ } }
   const cP = [], cA = [], sP = [], sA = [];
   for (const id of Object.keys(store)) {
     const e = store[id];
