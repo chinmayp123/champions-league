@@ -88,6 +88,36 @@ export const COMPETITIONS = {
     lookBackDays: 8, lookAheadDays: 10,
     betlogDir: join(DATA_DIR, "bets", "epl-2026-27"),
   },
+  laliga: {
+    key: "laliga-2026-27",
+    name: "LaLiga",
+    short: "LaLiga",
+    title: "LaLiga 26/27",
+    format: "league",
+    espn: "esp.1",
+    oddsApiSport: "soccer_spain_la_liga",
+    oddspapiTournamentId: 8,
+    oddspapiBudget: 50,
+    fotmob: { leagueId: 87, slug: "laliga" },
+    fanduel: { competitionId: 117, customPageId: null },
+    phaseSlugs: null,                            // one long league: every game belongs to "the phase"
+    phaseGames: 38,
+    // the usual places — the cup winner and Europe's extra slots can shift the European ones
+    zones: [{ upTo: 4, cls: "adv", label: "UCL" }, { upTo: 5, cls: "po", label: "UEL" }, { upTo: 17, cls: "mid", label: "" }, { upTo: 20, cls: "rel", label: "down" }],
+    zoneLabels: { adv: "UCL", po: "UEL", mid: "", rel: "Down" },
+    cuts: { adv: "Places 1–4 · Champions League", po: "Place 5 · Europa League", mid: "Places 6–17", rel: "Places 18–20 · relegated" },
+    roundPrefix: "MW",
+    phaseName: "Matchweek",
+    tableSub: "LaLiga · 20 clubs · 38 matchweeks",
+    tableNote: "European places can shift with the Copa del Rey winner",
+    standingsHint: "green = Champions League · blue = Europa League · red = relegation",
+    koOrder: [], koLabel: {}, koShort: {},
+    knockoutWindow: null,                        // no bracket
+    twoLegged: false,
+    // weekend rounds plus regular midweek ones: 8 days back keeps the last round, 10 ahead the next
+    lookBackDays: 8, lookAheadDays: 10,
+    betlogDir: join(DATA_DIR, "bets", "laliga-2026-27"),
+  },
   wc: {
     key: "wc-2026",
     name: "World Cup",
@@ -121,7 +151,7 @@ export const COMPETITIONS = {
 };
 
 // the competitions the website shows, in switcher order (each gets a publisher pass + live function)
-export const SITE_COMPETITIONS = ["epl", "ucl"];
+export const SITE_COMPETITIONS = ["epl", "laliga", "ucl"];
 
 function pick() {
   let key = process.env.COMPETITION;

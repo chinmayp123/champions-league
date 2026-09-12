@@ -10,8 +10,8 @@ feeds. This file is about *how to work here* without breaking things.
 ## What this is
 
 **Futbol Lab** (Starball Lab until September 2026): a football match tracker that runs a
-betting model against the **Premier League** and the **2026-27 Champions League**, with La
-Liga and MLS next. One shared data layer in plain ESM, one renderer file, no framework, no
+betting model against the **Premier League**, **LaLiga** and the **2026-27 Champions
+League**, with MLS next. One shared data layer in plain ESM, one renderer file, no framework, no
 bundler, zero runtime dependencies in the data layer.
 
 The owner uses **the website** (<https://futbol-lab.vercel.app>,
@@ -143,14 +143,19 @@ corners line, Dortmund's players on Bayern's page.
 ## Current state (September 2026)
 
 Working: the website (Firestore + GitHub Actions publisher + Vercel live functions) for the
-Premier League and the Champions League, live tracking, xG, pitch with lineups and shot map,
+Premier League, LaLiga and the Champions League, live tracking, xG, pitch with lineups and shot map,
 five tabs, the card with its guards, the bet record with CLV, the model scorecard with scorer
 grading, installers, cross-competition form and projections.
 
-Next competitions: **La Liga** (ESPN `esp.1`, Odds API `soccer_spain_la_liga`, OddsPapi 8,
-FanDuel 117) and **MLS** (`usa.1`, `soccer_usa_mls`, OddsPapi 242, FanDuel 141 — conference
-tables, plus a playoff bracket the renderer doesn't draw yet). Those ids were verified in
-September 2026.
+Next competition: **MLS** (ESPN `usa.1`, Odds API `soccer_usa_mls`, OddsPapi 242, FanDuel
+141 — conference tables, plus a playoff bracket the renderer doesn't draw yet). Those ids
+were verified in September 2026.
+
+Before adding any league, run every ESPN club in it against every feed's club names (FotMob,
+FanDuel, The Odds API's free events list, Action Network's dated boards) and look for two
+things: clubs with no match, and one feed name matching several clubs. The second is how
+LaLiga's bugs were caught — "Real Sociedad" had been reduced to "Real" (matching Real Madrid
+and Betis) and ESPN's bare "Deportivo" swallowed "Deportivo Alavés".
 
 Known gaps, roughly in priority order:
 

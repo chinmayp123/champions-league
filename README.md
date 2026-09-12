@@ -1,7 +1,7 @@
 # Futbol Lab
 
-A football match tracker and betting harness for the **Premier League** and the **2026-27
-UEFA Champions League**, with La Liga and MLS next: live scores, real shot-level xG, lineups
+A football match tracker and betting harness for the **Premier League**, **LaLiga** and the
+**2026-27 UEFA Champions League**, with MLS next: live scores, real shot-level xG, lineups
 on a pitch, a model that prices every market, a paper bet card that grades itself, and a
 scorecard that judges the model. It was Starball Lab while it covered only the Champions
 League.
@@ -9,7 +9,7 @@ League.
 **On the web:** [futbol-lab.vercel.app](https://futbol-lab.vercel.app) ·
 [chinmayp123.github.io/futbol-lab](https://chinmayp123.github.io/futbol-lab/) — the same
 front end as the desktop widget (below), fed by Firestore. Switch competitions in the title
-bar (`?c=epl`, `?c=ucl`). Match data is public; the bet record, the day's card and slip
+bar (`?c=epl`, `?c=laliga`, `?c=ucl`). Match data is public; the bet record, the day's card and slip
 tracking need the owner's Google sign-in.
 
 Zero runtime dependencies — Node 18+ and Electron. ESPN, FotMob, FanDuel and Action Network

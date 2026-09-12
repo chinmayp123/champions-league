@@ -13,9 +13,12 @@ const FULL_ALIAS = {
   "sporting lisbon": "sporting cp", "sporting clube de portugal": "sporting cp",
   "bruges": "club brugge", "slavia praha": "slavia prague", "bayern": "bayern munchen",
   "nottm forest": "nottingham forest", "nott m forest": "nottingham forest", "spurs": "tottenham hotspur", "wolves": "wolverhampton wanderers",
+  // ESPN and FanDuel call Deportivo La Coruña just "Deportivo", whose one token also sits inside
+  // "Deportivo Alavés" — so FotMob's and Action Network's Alavés matched La Coruña
+  "deportivo": "deportivo la coruna",
 };
 const TOKEN_ALIAS = { internazionale: "inter", munich: "munchen", muenchen: "munchen", praha: "prague", atletico: "atletico", atlético: "atletico" };
-const GENERIC = new Set(["fc", "cf", "sc", "ac", "afc", "club", "de", "the", "and", "of", "sk", "fk", "sv", "bk", "if", "ss", "us", "ud", "cd", "rc", "rcd", "bsc", "tsv", "sl", "cp", "rb", "as", "ssc", "ogc", "rsc", "kaa", "krc", "losc", "stade", "olympique", "fotball", "fotballklubb", "fussball", "calcio", "sociedad", "1907", "1899", "1900", "1904", "1909", "1913", "1914"]);
+const GENERIC = new Set(["fc", "cf", "sc", "ac", "afc", "club", "de", "the", "and", "of", "sk", "fk", "sv", "bk", "if", "ss", "us", "ud", "cd", "rc", "rcd", "bsc", "tsv", "sl", "cp", "rb", "as", "ssc", "ogc", "rsc", "kaa", "krc", "losc", "stade", "olympique", "fotball", "fotballklubb", "fussball", "calcio", "1907", "1899", "1900", "1904", "1909", "1913", "1914"]);
 
 export const fold = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
   .replace(/ø/g, "o").replace(/æ/g, "ae").replace(/ß/g, "ss").replace(/ł/g, "l").replace(/đ/g, "d").replace(/ı/g, "i")

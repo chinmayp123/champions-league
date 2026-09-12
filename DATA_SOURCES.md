@@ -5,7 +5,7 @@ wrapped so a failure returns `null` and the caller degrades — see the best-eff
 [AGENTS.md](AGENTS.md).
 
 Competition-specific ids for each feed live in `competition.mjs`, one entry per competition
-(Premier League, Champions League; the World Cup kept), so adding one is a config change
+(Premier League, LaLiga, Champions League; the World Cup kept), so adding one is a config change
 plus a publisher pass and a live function on the website.
 
 ---
@@ -57,7 +57,7 @@ prices. Prices sit at `runners[].winRunnerOdds.americanDisplayOdds.americanOdds`
 
 League events come off the soccer SPORT page
 (`content-managed-page?page=SPORT&eventTypeId=1`) filtered by FanDuel's `competitionId` —
-228 Champions League, 10932509 Premier League (117 La Liga, 141 MLS); there are no custom
+228 Champions League, 10932509 Premier League, 117 LaLiga (141 MLS); there are no custom
 competition pages. Player markets post late: early on a matchday an event can carry only
 two markets, which reads as "no props", not as a matching failure. Optional config: `fanduelRegion` (your state
 subdomain, default `nj`) and `fanduelWorldCupPageId` (only for competitions that do have a
@@ -72,9 +72,10 @@ draw-no-bet, team totals and Asian handicaps across books, which is what lets th
 show a real "best price" and the card price markets FanDuel alone doesn't cover. Books to
 try are configurable (`oddspapiBooks`, default `fanduel,bet365`); responses are cached 30
 minutes to 12 hours because pre-match lines barely move. Tournament ids: 7 Champions
-League, 17 Premier League (8 La Liga, 242 MLS). Every call is counted: the website's
+League, 17 Premier League, 8 LaLiga (242 MLS). Every call is counted: the website's
 publisher caps each competition at its monthly `oddspapiBudget` (Champions League 60,
-Premier League 90), because each run is a fresh process whose caches start empty.
+Premier League 90, LaLiga 50 — 200 of the 250, the rest left for the other project),
+because each run is a fresh process whose caches start empty.
 
 **Watch for stale lines.** A ±0.5 handicap from a line shop that beats FanDuel's moneyline
 on the same outcome is a stale price, not value — the card guards against exactly that.
@@ -110,8 +111,13 @@ Every feed spells clubs differently: `Bayern Munich` / `Bayern München`, `Inter
 `Paris Saint-Germain` / `PSG`. `teams.mjs` is the single matcher — diacritics folded,
 aliases canonicalised, generic tokens dropped, every distinctive token of the shorter name
 required in the longer one, and **abbreviations matched only by exact equality**. All 36
-Champions League clubs resolve against every feed, and all 20 Premier League clubs against
-FotMob and FanDuel (FanDuel's `Nottm Forest` needed an alias).
+Champions League clubs resolve against every feed, all 20 Premier League clubs against
+FotMob and FanDuel (FanDuel's `Nottm Forest` needed an alias), and all 20 LaLiga clubs
+against FotMob, FanDuel, The Odds API and Action Network. LaLiga needed two fixes that were
+wrong-club bugs, not misses: `sociedad` used to be a generic token, which left "Real
+Sociedad" as just "real" and matched it to Real Madrid, Real Betis and Racing Santander; and
+ESPN's bare "Deportivo" (La Coruña) matched "Deportivo Alavés" until it was aliased to
+`deportivo la coruna`.
 
 This is not a nicety. The earlier per-module substring matchers put Dortmund's players on
 Bayern's page and City's on United's, because ESPN's `MUN` and `MAN` codes appear inside
