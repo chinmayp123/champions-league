@@ -1,6 +1,6 @@
 {
   "name": "futbol-lab",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Futbol Lab \u2014 football match tracker + prediction model (the website, and a desktop app around it)",
   "type": "module",
   "bin": {
@@ -33,6 +33,7 @@
       "widget/main.cjs",
       "widget/icon.ico",
       "widget/icon.png",
+      "widget/icon-1024.png",
       "widget/tray.png",
       "widget/tray@2x.png",
       "package.json"
@@ -65,7 +66,7 @@
           ]
         }
       ],
-      "icon": "widget/icon.png",
+      "icon": "widget/icon-1024.png",
       "category": "public.app-category.sports"
     },
     "dmg": {

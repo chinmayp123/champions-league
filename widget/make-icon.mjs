@@ -1,6 +1,7 @@
 // make-icon — draw the Futbol Lab mark into the app's icons with no dependencies:
 //   tray.png (16px) + tray@2x.png (32px)  — the mark on transparent, for the tray
 //   icon.png (256px) + icon.ico (16…256)  — the same mark, for the window, taskbar, shortcut, favicon
+//   icon-1024.png                         — the macOS app icon (electron-builder refuses anything under 512px)
 //   mark.svg                              — the vector mark (the title bar inlines the same drawing)
 // The mark: a white ball with classic navy panels — a pentagon in the middle, five more out along its
 // corners, seams between them — circled by a blue orbit that passes in front of the ball's lower half
@@ -139,6 +140,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   writeFileSync(join(HERE, "tray.png"), png(16, raster(16)));
   writeFileSync(join(HERE, "tray@2x.png"), png(32, raster(32)));
   writeFileSync(join(HERE, "icon.png"), png(256, raster(256)));
+  writeFileSync(join(HERE, "icon-1024.png"), png(1024, raster(1024, 4))); // 4×4 supersampling is plenty at this size
   writeFileSync(join(HERE, "icon.ico"), ico([16, 24, 32, 48, 64, 128, 256].map((size) => ({ size, data: png(size, raster(size)) }))));
   writeFileSync(join(HERE, "mark.svg"), markSvg() + "\n");
   console.log("wrote widget/tray.png, tray@2x.png, icon.png, icon.ico, mark.svg");

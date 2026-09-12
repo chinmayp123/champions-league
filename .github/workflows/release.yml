@@ -13,6 +13,8 @@ permissions:
 jobs:
   build:
     strategy:
+      # one platform failing must not cancel the other's installer
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
