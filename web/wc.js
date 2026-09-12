@@ -293,8 +293,19 @@ window.wc = {
   quit: async () => {},
 };
 
+// "Get app": the desktop installers from the latest GitHub release — the Windows setup file directly,
+// the release page elsewhere (the Mac build comes in two architectures)
+function paintDownload() {
+  const a = document.getElementById("btn-download");
+  if (!a) return;
+  const latest = "https://github.com/chinmayp123/futbol-lab/releases/latest";
+  a.href = /Windows/i.test(navigator.userAgent) ? `${latest}/download/Futbol-Lab-Setup.exe` : latest;
+  a.title = /Windows/i.test(navigator.userAgent) ? "Download the Futbol Lab app for Windows" : "Download the Futbol Lab desktop app";
+}
+
 paintAuth();
 paintComps();
+paintDownload();
 // renderer.js registers its callbacks as it loads, so it must run after window.wc exists
 const script = document.createElement("script");
 script.src = "renderer.js";

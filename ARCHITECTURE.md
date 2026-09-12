@@ -39,8 +39,10 @@ the renderer is plain DOM calls in one file.
 ```
 
 **The rule that keeps this simple:** the data layer never touches the DOM and the renderer
-never fetches. Main polls `lib.getWidgetState()`, pushes a JSON blob over IPC, and the
-renderer draws whatever it was handed. Anything the renderer needs must be added to the
+never fetches. The renderer draws whatever JSON it is handed: on the website (and the desktop
+app, which is the website in a window) `web/wc.js` hands it what the publisher and the live
+functions built with `lib.getWidgetState()` and friends; before v1.2 the desktop app's main
+process polled `lib` and pushed the blob over IPC. Anything the renderer needs must be added to the
 payload in `lib.mjs` first.
 
 ---
@@ -152,15 +154,21 @@ stats the Record tab shows. Two values feed back into the model:
 later. CLV is the honest measure of edge; results take months.
 
 ### `widget/` — the shell
-- **`main.cjs`** (Electron main): names the app and takes its own `userData` folder (so the
-  single-instance lock and window state don't collide with other Electron projects),
-  single-instance, polls every 30 s (120 s at halftime, 60 s when nothing is live), pushes
-  `update` and `config` over IPC, owns the tray, Windows Controls Overlay (so Snap Layouts
-  works), goal/full-time toasts, and the compact ↔ expanded presets (300×400 / 1180×920).
-- **`preload.cjs`**: the whole bridge, 13 channels — `onUpdate`, `onConfig`, `setMatch`,
-  `getParlays`, `getParlayMenu`, `trackParlay`, `getRecord`, `getStandings`,
-  `toggleExpand`, `togglePin`, `refresh`, `hide`, `quit`. Context-isolated, no Node in the
-  renderer.
+- **`main.cjs`** (Electron main) — since v1.2 **the desktop app is a window around the
+  website** (`FUTBOL_SITE`, GitHub Pages by default because it's an authorized Google sign-in
+  domain). A frameless window with the native caption buttons over the site's 50px bar
+  (Windows Controls Overlay, so Snap Layouts works; traffic lights inset on macOS), CSS
+  injected so that bar drags the window and the site's "Get app" button hides, Google
+  sign-in popups kept in-app and every other link sent to the browser, a retry page when
+  offline, remembered bounds, the tray, start-with-Windows, single instance. It names the app
+  and takes its own `userData` folder (carrying over the old Starball Lab one). The user
+  agent drops its Electron token because Google refuses sign-in from embedded browsers.
+  Before v1.2 it polled `lib.mjs` itself, pushed JSON to the renderer over IPC through
+  `preload.cjs` (removed) and spent the user's own odds keys.
+- **Installers**: `npm run dist` locally, or push a `v*` tag and `release.yml` builds the
+  Windows setup and both macOS `.dmg`s and attaches them to a GitHub release. File names
+  carry no version (`Futbol-Lab-Setup.exe`, `Futbol-Lab-<arch>.dmg`), so the site's "Get app"
+  link to `releases/latest/download/Futbol-Lab-Setup.exe` keeps working across releases.
 - **`renderer.js`** (~1850 lines): five tabs, all drawn with `createElement` +
   `textContent`. **No `innerHTML` with feed strings, ever** — the CSP forbids inline script
   and the data is third-party.

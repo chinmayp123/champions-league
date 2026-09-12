@@ -7,6 +7,9 @@ name: release
 on:
   push:
     tags: ["v*"]
+# creating the release and uploading the installers needs write access (new repos default to read)
+permissions:
+  contents: write
 jobs:
   build:
     strategy:

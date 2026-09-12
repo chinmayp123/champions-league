@@ -1,7 +1,7 @@
 {
   "name": "futbol-lab",
-  "version": "1.1.0",
-  "description": "Futbol Lab \u2014 football match tracker + betting harness (website + desktop widget)",
+  "version": "1.2.0",
+  "description": "Futbol Lab \u2014 football match tracker + prediction model (the website, and a desktop app around it)",
   "type": "module",
   "bin": {
     "futbol-lab": "./cli.mjs"
@@ -24,19 +24,18 @@
   "build": {
     "appId": "lab.futbol.widget",
     "productName": "Futbol Lab",
-    "artifactName": "Futbol-Lab-Setup-${version}.${ext}",
+    "artifactName": "Futbol-Lab-Setup.${ext}",
     "directories": {
       "output": "dist"
     },
     "asar": true,
     "files": [
-      "widget/**/*",
-      "*.mjs",
-      "package.json",
-      "!widget/make-icon.mjs",
-      "!morning.mjs",
-      "!cli.mjs",
-      "!dryrun.mjs"
+      "widget/main.cjs",
+      "widget/icon.ico",
+      "widget/icon.png",
+      "widget/tray.png",
+      "widget/tray@2x.png",
+      "package.json"
     ],
     "win": {
       "target": [
@@ -70,7 +69,7 @@
       "category": "public.app-category.sports"
     },
     "dmg": {
-      "artifactName": "Futbol-Lab-${version}-${arch}.${ext}"
+      "artifactName": "Futbol-Lab-${arch}.${ext}"
     }
   }
 }

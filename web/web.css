@@ -13,3 +13,7 @@
 .comps .comp { padding-left: 9px; padding-right: 9px; }
 .compact .comps { margin-right: 0; }
 .compact .comps .comp:not(.active) { display: none; }
+
+/* "Get app": the desktop installers (hidden on phones, and inside the desktop app itself) */
+#btn-download.dl { display: inline-flex; align-items: center; text-decoration: none; }
+.compact #btn-download.dl { display: none; }

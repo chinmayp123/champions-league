@@ -49,7 +49,7 @@ swap(/<meta http-equiv="Content-Security-Policy"[^>]*\/>/, `<meta http-equiv="Co
 swap(/<link rel="stylesheet" href="style.css" \/>/, `<link rel="stylesheet" href="style.css" />\n<link rel="stylesheet" href="web.css" />`, "the stylesheet link");
 // the competition switcher (wc.js fills it) sits before the search box
 swap(/<div class="search">/, `<div class="comps" id="comps"></div>\n        <div class="search">`, "the search box");
-swap(/<button id="btn-expand"/, `<button id="btn-auth" class="tab auth" title="Sign in to see your record and track slips">Sign in</button>\n        <button id="btn-expand"`, "the expand button");
+swap(/<button id="btn-expand"/, `<a id="btn-download" class="tab dl" href="https://github.com/chinmayp123/futbol-lab/releases/latest" target="_blank" rel="noopener" title="Download the Futbol Lab desktop app">Get app</a>\n        <button id="btn-auth" class="tab auth" title="Sign in to see your record and track slips">Sign in</button>\n        <button id="btn-expand"`, "the expand button");
 // wc.js defines window.wc, then loads renderer.js itself
 swap(/<script src="renderer.js"><\/script>/, `<script type="module" src="wc.js"></script>`, "the renderer script tag");
 writeFileSync(new URL("index.html", OUT), html);

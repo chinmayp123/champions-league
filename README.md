@@ -163,13 +163,19 @@ calls them per game.
 
 ## Installers
 
-`npm run dist` builds `dist/Futbol-Lab-Setup-<version>.exe`. Pushing a version tag
-(`git tag v1.2.0 && git push origin v1.2.0`) makes GitHub build the Windows setup and macOS
-`.dmg` files for Intel and Apple silicon and attach them to a release.
+**Get the app** from the site's title bar (Windows downloads `Futbol-Lab-Setup.exe`
+directly) or from the [latest release](https://github.com/chinmayp123/futbol-lab/releases/latest)
+(`Futbol-Lab-arm64.dmg` for Apple silicon Macs, `Futbol-Lab-x64.dmg` for Intel). Since v1.2
+the desktop app is the website in its own window — every competition, live data, sign-in —
+with native window buttons, a tray icon and start-with-Windows. It keeps no bet log or odds
+keys of its own.
 
-Neither is code-signed: Windows shows a SmartScreen "More info → Run anyway" the first
-time, macOS needs right-click → Open. The installed app keeps its own data folder, so
-updates never touch the bet log.
+`npm run dist` builds the Windows installer locally. Pushing a version tag
+(`git tag v1.3.0 && git push origin v1.3.0`) makes GitHub build the Windows setup and both
+macOS `.dmg` files and attach them to a release.
+
+Neither is code-signed: Windows shows a SmartScreen "More info → Run anyway" the first time,
+macOS needs right-click → Open.
 
 ---
 
