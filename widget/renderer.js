@@ -545,7 +545,7 @@ function renderMatch(m) {
   app.style.setProperty("--away", awayColor);
   const live = m.state === "in", pre = m.state === "pre", post = m.state === "post";
   const p = m.prediction;
-  subEl.textContent = [`${m.home.name} v ${m.away.name}`, m.venue, m.matchday ? `MD ${m.matchday}` : m.round ? m.round.label : null].filter(Boolean).join(" · ");
+  subEl.textContent = [`${m.home.name} v ${m.away.name}`, m.venue, m.matchday ? `${last?.comp?.roundPrefix || "MD"} ${m.matchday}` : m.round ? m.round.label : null].filter(Boolean).join(" · ");
 
   // full-time winner: higher score, shootout decides level games
   let winSide = null;
@@ -1417,7 +1417,7 @@ function renderBuilder(data) {
   if (data.trust != null) facts.push(fact("Edge trust", Number(data.trust).toFixed(2)));
   setThird([
     h("span", { class: "matchup" }, [crestFor(hAb, "sm"), txt(hAb), h("span", { class: "vs", text: "v" }), txt(aAb), crestFor(aAb, "sm")]),
-    h("span", { class: "kick", text: mt ? `${fmtDay(mt.date)} ${fmtTime(mt.date)}${last?.match?.matchday ? ` · MD ${last.match.matchday}` : ""}` : data.date }),
+    h("span", { class: "kick", text: mt ? `${fmtDay(mt.date)} ${fmtTime(mt.date)}${last?.match?.matchday ? ` · ${last?.comp?.roundPrefix || "MD"} ${last.match.matchday}` : ""}` : data.date }),
     h("div", { class: "facts" }, facts),
   ], hc);
   setTicker([
