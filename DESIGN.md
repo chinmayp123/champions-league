@@ -1,9 +1,10 @@
-# Design system — "Broadcast", Champions League night
+# Design system — "Broadcast", club-football night
 
-The widget looks like a sports broadcast graphics package: near-black navy, one electric
+Futbol Lab looks like a sports broadcast graphics package: near-black navy, one electric
 blue, condensed type at size for names, monospace for numbers, square corners everywhere.
-It was lifted from the sibling NFL project (`parlay-lab`) and re-skinned to Champions League
-navy, and the app is called **Starball Lab**.
+It was lifted from the sibling NFL project (`parlay-lab`) and re-skinned to night navy while
+the app tracked only the Champions League (as Starball Lab); the website and the desktop
+widget share it.
 
 Everything structural lives in `widget/style.css`. Per-match colours (each club's kit) are
 set inline from `widget/renderer.js`. There is no CSS framework and no build step.
@@ -47,7 +48,7 @@ set inline from `widget/renderer.js`. There is no CSS framework and no build ste
 --warn: #ffd23f;    /* caution, sharp money, cards */
 --fade: #ff8a3d;    /* fade this */
 --neg: #ff5a3c;     /* lost, missed */
---star: #dfe9ff;    /* starball silver — the mark, knockout accents */
+--star: #dfe9ff;    /* silver — knockout accents */
 
 /* per match, set inline from ESPN kit colours */
 --home: …;          --away: …;
@@ -125,21 +126,25 @@ a player dims everyone else and highlights that player's shots.
 
 ## The mark
 
-The app icon and the title-bar logo are the same drawing: a white ball whose panels are
-navy stars — a pentagon star in the middle, five stars touching the rim pointing outward, a
-navy outline. It's an original take on the Champions League starball feel; UEFA's actual
-mark is a trademark and is deliberately not reproduced.
+The app icon, the title-bar logo, the favicon and the faint background watermark are one
+drawing: a white ball with classic navy panels — a pentagon in the middle, five more out
+along its corners, seams between them — circled by a blue orbit that passes in front of the
+ball's lower half and behind its upper half (the "lab"). It replaced the starball mark when
+the app grew past the Champions League and became Futbol Lab (September 2026).
 
-`widget/make-icon.mjs` rasterises it analytically (point-in-polygon coverage,
-supersampled) into `tray.png`, `tray@2x.png`, `icon.png` and a multi-size `icon.ico`, with
-no image library. Re-run it after changing the geometry:
+`widget/make-icon.mjs` holds the geometry. Run, it rasterises the mark analytically
+(point-in-polygon, segment and ellipse distance, supersampled) into `tray.png`,
+`tray@2x.png`, `icon.png` and a multi-size `icon.ico` with no image library, and writes
+`mark.svg`. Its exported `markSvg()` generated the title-bar SVG in `widget/index.html` and
+the `--wm` / `--wm-solid` watermark tokens in `style.css`; regenerate those too after
+changing the geometry:
 
 ```sh
 node widget/make-icon.mjs
 ```
 
-The icon must stay recognisable at 16px — that requirement is what killed the earlier
-seven-star version, whose rings turned to mush.
+The icon must stay recognisable at 16px — that requirement killed a seven-star version of
+the old mark, whose rings turned to mush.
 
 ---
 

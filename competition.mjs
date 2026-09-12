@@ -15,7 +15,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // where the user's own files live — odds.config.json (keys) and the bet log. In the repo that's
 // the repo itself; the packaged desktop app points this at Electron's per-user data folder, so
 // nothing personal ships inside the installer and the bet log survives updates.
-export const DATA_DIR = process.env.STARBALL_DATA_DIR || HERE;
+export const DATA_DIR = process.env.FUTBOL_DATA_DIR || HERE;
 export function readConfig() {
   try { return JSON.parse(readFileSync(join(DATA_DIR, "odds.config.json"), "utf8")); } catch { return {}; }
 }
@@ -83,8 +83,9 @@ export const COMPETITIONS = {
     koOrder: [], koLabel: {}, koShort: {},
     knockoutWindow: null,                        // no bracket
     twoLegged: false,
-    // weekend rounds plus the odd midweek one: a week and a half ahead covers the next slate
-    lookBackDays: 4, lookAheadDays: 10,
+    // weekly rounds: 8 days back keeps the last round's results (the table's "last" column),
+    // a week and a half ahead covers the next slate plus the odd midweek round
+    lookBackDays: 8, lookAheadDays: 10,
     betlogDir: join(DATA_DIR, "bets", "epl-2026-27"),
   },
   wc: {

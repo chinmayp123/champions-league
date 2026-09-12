@@ -47,16 +47,23 @@ payload in `lib.mjs` first.
 
 ## Modules
 
-### `competition.mjs` — what tournament this is
+### `competition.mjs` — what competition this is
 The single source of truth for every competition-specific id and format rule. `COMP` is
-the active entry, chosen by `"competition"` in `odds.config.json` or the `COMPETITION` env
-var (`ucl` default, `wc` kept as the reference the tool was built on).
+the active entry, chosen once when the module loads: the `COMPETITION` env var, else
+`"competition"` in `odds.config.json`, else `ucl`. Entries: `epl` (Premier League), `ucl`
+(Champions League), `wc` (kept as the reference the tool was built on).
+`SITE_COMPETITIONS` lists the ones the website shows. Because the data layer is bound to
+one competition per process, the website runs one publisher pass and one Vercel live
+function per competition rather than switching at runtime.
 
 Each entry carries: the ESPN league slug, The Odds API sport key, the OddsPapi tournament
-id, the FotMob league id + slug, FanDuel's competition id, the league-phase slugs and
-number of matchdays, the qualification `zones`, the knockout round order and labels, the
-knockout date window, whether ties are two-legged, the fixture-pool look-back/ahead, and
-the bet-log directory.
+id and monthly call budget, the FotMob league id + slug, FanDuel's competition id, the
+`format` (`league-phase`, `league` or `groups`), the phase slugs and games per team, the
+table `zones` with their labels and cut-line text, the round-pill prefix (`MD` / `MW`), the
+knockout round order, labels and date window (none for a domestic league), whether ties are
+two-legged, the fixture-pool look-back/ahead, and the bet-log directory. `compMeta()`
+carries the display subset into every payload, so the renderer has no competition-specific
+words of its own.
 
 Also here: `DATA_DIR` (where the user's own files live — the repo when run from source,
 Electron's per-user data folder when packaged), `readConfig()` (the one reader of
@@ -158,7 +165,7 @@ later. CLV is the honest measure of edge; results take months.
   `textContent`. **No `innerHTML` with feed strings, ever** — the CSP forbids inline script
   and the data is third-party.
 - **`style.css`**: the Broadcast design system. See [DESIGN.md](DESIGN.md).
-- **`make-icon.mjs`**: rasterises the starball into `icon.ico/png` and the tray PNGs with
+- **`make-icon.mjs`**: draws the Futbol Lab mark into `icon.ico/png` and the tray PNGs with
   no image library (analytic SVG geometry → RGBA → PNG via `node:zlib`).
 
 ### `cli.mjs`, `morning.mjs`
@@ -221,7 +228,7 @@ public), and the Firebase project stays on the free Spark plan (no Cloud Functio
 
 ```
  GitHub Actions cron (5 min)            Vercel function (on demand)
- publisher/publish.mjs live · keyed     api/state.mjs ?q=<event>
+ publisher/publish.mjs live · keyed     api/live/<code>.mjs ?q=<event>
         │ writes views + records               │ fresh match view, read-only
         ▼                                      │
    Firestore  competitions/<COMP.key>/…        │
@@ -232,16 +239,19 @@ public), and the Firebase project stays on the free Spark plan (no Cloud Functio
 
 | Piece | What |
 |---|---|
-| `publisher/publish.mjs` + `.github/workflows/publish.yml` | Every 5 min (GitHub often runs it late). `live` — no odds keys: logs slips, publishes the slate, rebuilds match views by urgency (live every run, <2 h to kickoff every run, <36 h every 30 min, finished at FT + once 2 h later) within a 150 s budget, the table every 30 min, the record hourly or when something finished. `keyed` — the only step with the keys: the 10:00 America/Los_Angeles card (settled, recorded, published with the builder), one card/builder refresh ≤90 min before the day's first kickoff, closing prices only for pending legs inside the CLV window, at most every 30 min. The schedule lives in `publisher/jobs`, because every run is a fresh process and the in-memory TTLs protect nothing. |
-| `api/state.mjs` (Vercel, `vercel.json`) | `GET /api/state?q=<ESPN id>` → `lib.getWidgetState` on demand. Loads the records (frozen call, pregame snapshot, goals bias) but never saves them; no odds keys, so traffic can't spend quota. CDN `s-maxage=20`. |
-| `web/build.mjs` → `site/` | assembles the site from `widget/renderer.js`, `style.css`, `icon.png` and a transformed `index.html` (browser CSP, `wc.js` instead of the renderer tag, a sign-in button) — the widget's front end stays the single source. Run by `.github/workflows/pages.yml` and Vercel's build. |
-| `web/wc.js` | `window.wc` for the browser: slate + match view from Firestore snapshots, the live function for a game that's live / ≤90 min out / just finished, the table and builder from `view/*`, the card and record from `private/*` (owner), `trackParlay` queues a `slips` doc the next run logs. Expand is a toggle; pin/hide/quit are no-ops. |
+| `publisher/publish.mjs` + `.github/workflows/publish.yml` | Every 5 min (GitHub often runs it late), one pass per competition (`COMPETITIONS` in the workflow, `COMPETITION=<code>` per process). `live` — no odds keys: logs slips, publishes the slate, rebuilds match views by urgency (live every run, <2 h to kickoff every run, <36 h every 30 min, finished at FT + once 2 h later) within a 150 s budget, the table every 30 min, the record hourly or when something finished. `keyed` — the only step with the keys: the 10:00 America/Los_Angeles card (settled, recorded, published with the builder), one card/builder refresh ≤90 min before the day's first kickoff, closing prices only for pending legs inside the CLV window, at most every 30 min. OddsPapi calls are counted against the competition's `oddspapiBudget` for the month (in `publisher/jobs`). The schedule lives in `publisher/jobs`, because every run is a fresh process and the in-memory TTLs protect nothing. |
+| `api/live/<code>.mjs` + `api/_live.mjs` (Vercel, `vercel.json`) | `GET /api/live/<code>?q=<ESPN id>` → `lib.getWidgetState` on demand. Each competition is its own function: the wrapper sets `COMPETITION` before loading the shared handler, so the data layer binds to it. Loads the records (frozen call, pregame snapshot, goals bias) but never saves them; no odds keys, so traffic can't spend quota. CDN `s-maxage=20`. |
+| `web/build.mjs` → `site/` | assembles the site from `widget/renderer.js`, `style.css`, `icon.png` and a transformed `index.html` (browser CSP, `wc.js` instead of the renderer tag, the competition switcher, a sign-in button) plus `site-config.js` (the site's competitions and the live API base) — the widget's front end stays the single source. Run by `.github/workflows/pages.yml` and Vercel's build. |
+| `web/wc.js` | `window.wc` for the browser, one competition at a time (the title-bar switcher sets `?c=<code>` and reloads, since the renderer caches a competition's card, record and table): slate + match view from Firestore snapshots, the live function for a game that's live / ≤90 min out / just finished, the table and builder from `view/*`, the card and record from `private/*` (owner), `trackParlay` queues a `slips` doc the next run logs. Expand is a toggle; pin/hide/quit are no-ops. |
 | `firestore.rules` | public read `view/{slate,standings,menu,status}` and `games/*`; owner read `private/{record,parlays}`; publisher-only `store/*` and `publisher/jobs`; slips created by the owner (strict schema), read + deleted by the publisher; `owners/{uid}` enrolled only by the publisher. Every write validated. |
 | Auth | Google sign-in for the owner; email/password only for the publisher account (uid pinned in the rules). Enrol an owner: `node publisher/add-owner.mjs <uid>` (the page shows the uid). |
-| Secrets | GitHub: `ODDS_API_KEY`, `ODDSPAPI_KEY`, `STARBALL_PUBLISHER_EMAIL`, `STARBALL_PUBLISHER_PASSWORD`. Vercel: the two publisher ones. Locally: `publisher/credentials.json` (gitignored). |
+| Secrets | GitHub: `ODDS_API_KEY`, `ODDSPAPI_KEY`, `FUTBOL_PUBLISHER_EMAIL`, `FUTBOL_PUBLISHER_PASSWORD`. Vercel: the two publisher ones. Locally: `publisher/credentials.json` (gitignored). |
 | One-offs | `node publisher/import-logs.mjs` copied the desktop records into Firestore. |
 
-Firebase: project `champions-league-a650f`, Firestore `(default)` Standard in `nam5`.
+Firebase: project `champions-league-a650f`, Firestore `(default)` Standard in `nam5`. Every
+competition has its own subtree (`competitions/<COMP.key>/…`), so records, jobs and slips
+never mix. Adding a competition to the site: an entry in `competition.mjs` +
+`SITE_COMPETITIONS`, the `COMPETITIONS` list in `publish.yml`, and `api/live/<code>.mjs`.
 
 ### The predictions store — how the model gets judged
 `predictions.json` is one entry per event:

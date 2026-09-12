@@ -1,4 +1,4 @@
-// lib — shared data + model layer for the Champions League tracker (Starball Lab).
+// lib — shared data + model layer for Futbol Lab (the competition comes from competition.mjs).
 // Both the CLI (cli.mjs) and the desktop widget (widget/) import from here, so the
 // fetching, odds, predictions, keeper-saves model, and betting reads live in ONE place.
 // Everything here returns plain data — no terminal ANSI, no DOM — so any front end can use it.
@@ -25,7 +25,7 @@ function loadOddsKey() {
 export const ODDS_KEY = loadOddsKey();
 
 export async function getJSON(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
+  const res = await fetch(url, { headers: { "User-Agent": "futbol-lab" } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
@@ -80,7 +80,7 @@ export async function fetchOddsEvents(ttl = ODDS_TTL.pre) {
   if (_oddsCache.events && now - _oddsCache.at < ttl) return _oddsCache.events;
   if (oddsState.exhausted) return _oddsCache.events; // whatever we last saw, or null
   const url = `${ODDS_BASE}/?apiKey=${ODDS_KEY}&regions=us&markets=h2h,totals&oddsFormat=american`;
-  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
+  const res = await fetch(url, { headers: { "User-Agent": "futbol-lab" } });
   if (!res.ok) throw await oddsRefused(res);
   _oddsCache = { at: now, events: await res.json() };
   oddsState.remaining = res.headers.get("x-requests-remaining");
@@ -173,7 +173,7 @@ export async function fetchPlayerProps(oddsEventId, ttl = ODDS_TTL.pre) {
   if (hit && now - hit.at < ttl) return hit.data;
   if (oddsState.exhausted) return hit ? hit.data : null;
   const url = `${SPORT_BASE}/events/${oddsEventId}/odds?apiKey=${ODDS_KEY}&regions=us&markets=${PROP_MARKETS}&oddsFormat=american`;
-  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
+  const res = await fetch(url, { headers: { "User-Agent": "futbol-lab" } });
   if (!res.ok) throw await oddsRefused(res);
   oddsState.remaining = res.headers.get("x-requests-remaining");
   const data = parsePlayerProps(await res.json());

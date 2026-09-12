@@ -1,13 +1,16 @@
-# Starball Lab
+# Futbol Lab
 
-A match tracker and betting harness for the **2026-27 UEFA Champions League**: live
-scores, real shot-level xG, lineups on a pitch, a model that prices every market, a paper
-bet card that grades itself, and a scorecard that judges the model.
+A football match tracker and betting harness for the **Premier League** and the **2026-27
+UEFA Champions League**, with La Liga and MLS next: live scores, real shot-level xG, lineups
+on a pitch, a model that prices every market, a paper bet card that grades itself, and a
+scorecard that judges the model. It was Starball Lab while it covered only the Champions
+League.
 
-**On the web:** [starball-lab.vercel.app](https://starball-lab.vercel.app) ·
-[chinmayp123.github.io/champions-league](https://chinmayp123.github.io/champions-league/) —
-the same front end as the desktop widget (below), fed by Firestore. Match data is public; the
-bet record, the day's card and slip tracking need the owner's Google sign-in.
+**On the web:** [futbol-lab.vercel.app](https://futbol-lab.vercel.app) ·
+[chinmayp123.github.io/futbol-lab](https://chinmayp123.github.io/futbol-lab/) — the same
+front end as the desktop widget (below), fed by Firestore. Switch competitions in the title
+bar (`?c=epl`, `?c=ucl`). Match data is public; the bet record, the day's card and slip
+tracking need the owner's Google sign-in.
 
 Zero runtime dependencies — Node 18+ and Electron. ESPN, FotMob, FanDuel and Action Network
 are all keyless; two optional keys unlock cross-book line shopping.
@@ -50,11 +53,12 @@ The browser can't run the data layer (the feeds refuse cross-origin calls and th
 would be public), so it runs elsewhere, all on free tiers:
 
 - **GitHub Actions** (`.github/workflows/publish.yml`, every 5 minutes) runs
-  `publisher/publish.mjs`: the slate, match views, table and record without odds keys, then a
-  rationed keyed step for the 10:00 Pacific card, the builder and closing prices. It writes
-  to **Firestore** (`champions-league-a650f`, locked down by `firestore.rules`).
-- **Vercel** (`api/state.mjs`) builds a fresh match view on demand for a game that's live or
-  about to be, since GitHub starts cron runs late.
+  `publisher/publish.mjs` once per competition: the slate, match views, table and record
+  without odds keys, then a rationed keyed step for the 10:00 Pacific card, the builder and
+  closing prices. It writes to **Firestore** (project `champions-league-a650f`, one subtree
+  per competition, locked down by `firestore.rules`).
+- **Vercel** (`api/live/<competition>.mjs`) builds a fresh match view on demand for a game
+  that's live or about to be, since GitHub starts cron runs late.
 - **`web/build.mjs`** assembles the site from `widget/renderer.js`, `style.css` and
   `index.html`; `web/wc.js` stands in for the Electron bridge. Pages builds it on push;
   Vercel builds it on `vercel deploy --prod`.
@@ -69,7 +73,7 @@ The owner signs in with Google, and the account is enrolled once with
 
 Five tabs in a 50px broadcast title bar. The shell is the "Broadcast" design system —
 Barlow Condensed for names, JetBrains Mono for numbers, square corners, a lower third and a
-crawl — re-skinned to Champions League navy.
+crawl — in night navy.
 
 ### Matchday
 The landing view. A hero for the tracked game painted in both clubs' colours with their
@@ -110,7 +114,9 @@ The 36-club league phase as one ordered list: a coloured rank gutter, a labelled
 each zone change (top 8 straight to the round of 16, 9–24 to the play-off, 25–36 out),
 crest, club, domestic league, played, W-D-L, goal difference, points, the last result and
 the next fixture. Once the phase ends it becomes the knockout bracket with two-legged ties
-folded to aggregate.
+folded to aggregate. A domestic league is the same list with its own zones — Premier League:
+top four to the Champions League, fifth to the Europa League, bottom three relegated — and
+no bracket.
 
 ### Record
 Two scorecards. The **model** scorecard: every pre-match call frozen before kickoff and
@@ -153,7 +159,7 @@ calls them per game.
 
 ## Installers
 
-`npm run dist` builds `dist/Starball-Lab-Setup-<version>.exe`. Pushing a version tag
+`npm run dist` builds `dist/Futbol-Lab-Setup-<version>.exe`. Pushing a version tag
 (`git tag v1.2.0 && git push origin v1.2.0`) makes GitHub build the Windows setup and macOS
 `.dmg` files for Intel and Apple silicon and attach them to a release.
 

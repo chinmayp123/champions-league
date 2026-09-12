@@ -20,8 +20,8 @@ jobs:
     env:
       # keep in step with SITE_COMPETITIONS in competition.mjs
       COMPETITIONS: "epl ucl"
-      STARBALL_PUBLISHER_EMAIL: ${{ secrets.STARBALL_PUBLISHER_EMAIL }}
-      STARBALL_PUBLISHER_PASSWORD: ${{ secrets.STARBALL_PUBLISHER_PASSWORD }}
+      FUTBOL_PUBLISHER_EMAIL: ${{ secrets.FUTBOL_PUBLISHER_EMAIL }}
+      FUTBOL_PUBLISHER_PASSWORD: ${{ secrets.FUTBOL_PUBLISHER_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

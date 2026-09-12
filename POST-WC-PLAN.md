@@ -100,7 +100,7 @@ size to actually fit and validate it.
 
 ## 5. This repo going forward
 
-`worldcup-tracker` (now `champions-league`) was **archived as-is** — a complete, honest record of a betting harness that worked
+`worldcup-tracker` (now `futbol-lab`) was **archived as-is** — a complete, honest record of a betting harness that worked
 and a prediction engine that didn't. The value is the harness and the lessons, both of which live on
 in `gridiron`. No further model work happens here; the World Cup is over.
 

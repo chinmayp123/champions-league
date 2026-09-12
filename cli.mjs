@@ -43,7 +43,7 @@ const C = {
 const c = (color, s) => `${C[color]}${s}${C.reset}`;
 
 async function getJSON(url) {
-  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
+  const res = await fetch(url, { headers: { "User-Agent": "futbol-lab" } });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return res.json();
 }
@@ -217,7 +217,7 @@ async function fetchOddsEvents() {
   const now = Date.now();
   if (_oddsCache.events && now - _oddsCache.at < 120000) return _oddsCache.events;
   const url = `${ODDS_BASE}/?apiKey=${ODDS_KEY}&regions=us&markets=h2h&oddsFormat=american`;
-  const res = await fetch(url, { headers: { "User-Agent": "champions-league" } });
+  const res = await fetch(url, { headers: { "User-Agent": "futbol-lab" } });
   if (!res.ok) throw new Error(`Odds API HTTP ${res.status}`);
   _oddsCache = {
     at: now,

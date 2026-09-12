@@ -1,4 +1,4 @@
-# Build the Starball Lab installers on a version tag and attach them to a GitHub release:
+# Build the Futbol Lab installers on a version tag and attach them to a GitHub release:
 #   git tag v1.1.0 && git push origin v1.1.0
 # Windows builds on a Windows runner (NSIS setup .exe), macOS on a Mac runner (.dmg, x64 + Apple
 # silicon). Neither is code-signed: Windows shows a SmartScreen "more info → run anyway" the

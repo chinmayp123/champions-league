@@ -9,13 +9,16 @@ feeds. This file is about *how to work here* without breaking things.
 
 ## What this is
 
-A desktop widget (Electron) that tracks the 2026-27 Champions League and runs a betting
-model against it. One shared data layer in plain ESM, one renderer file, no framework, no
-bundler, no build step, zero runtime dependencies.
+**Futbol Lab** (Starball Lab until September 2026): a football match tracker that runs a
+betting model against the **Premier League** and the **2026-27 Champions League**, with La
+Liga and MLS next. One shared data layer in plain ESM, one renderer file, no framework, no
+bundler, zero runtime dependencies in the data layer.
 
-The owner uses **the widget**, not the CLI. New features belong in `lib.mjs` +
-`widget/renderer.js`. `cli.mjs` still works and shares the data layer, but don't spend
-effort there unless asked.
+The owner uses **the website** (<https://futbol-lab.vercel.app>,
+<https://chinmayp123.github.io/futbol-lab/>), which runs the desktop widget's own renderer
+over Firestore — see the website section of ARCHITECTURE.md. New features still belong in
+`lib.mjs` + `widget/renderer.js`; the site and the widget pick them up together. `cli.mjs`
+still works and shares the data layer, but don't spend effort there unless asked.
 
 ---
 
@@ -26,6 +29,8 @@ npm install         # Electron + electron-builder (dev only)
 npm run widget      # launch from source
 node morning.mjs    # build + record today's card
 node cli.mjs        # terminal tracker
+node web/build.mjs  # build the website into site/
+COMPETITION=epl node publisher/publish.mjs live   # one publisher pass (needs publisher/credentials.json)
 ```
 
 No key is needed for anything essential. `odds.config.json` (gitignored) holds two optional
@@ -45,19 +50,23 @@ keys and the active competition.
 4. **No `innerHTML` with feed data.** The renderer builds DOM with `createElement` and
    `textContent`. The CSP blocks inline script; the data is third-party.
 5. **Competition specifics live in `competition.mjs`.** Never hardcode a league id, round
-   name, zone boundary or bet-log path anywhere else.
+   name, zone boundary, table wording or bet-log path anywhere else. Adding a competition
+   to the website is that entry plus `SITE_COMPETITIONS`, the `COMPETITIONS` list in
+   `publish.yml`, and an `api/live/<code>.mjs` wrapper.
 6. **Frozen predictions are immutable.** `bets/*/predictions.json` is the model's training
    set. The first pre-match freeze wins; later passes may only fill fields that were
    missing. Never regenerate the file wholesale, never backfill a call after a result is
    known.
 7. **Respect the quotas.** The Odds API (500/month) and OddsPapi (250/month) free tiers are
-   *shared with another project*. Cache, and never call them per game in a loop. ESPN,
-   FotMob, Action Network and FanDuel are keyless but unofficial — be gentle and cache.
+   *shared with another project*. Cache, and never call them per game in a loop. On the
+   website only the rationed `keyed` publisher step holds the keys, and each competition
+   has a monthly OddsPapi budget (`oddspapiBudget`) it can't exceed. ESPN, FotMob, Action
+   Network and FanDuel are keyless but unofficial — be gentle and cache.
 8. **Don't restart the owner's running widget** to test something, and don't spawn extra
    Electron instances unprompted. Say "needs a restart" and let them do it. (If you must
    launch one for QA, pass `--user-data-dir` pointing at a scratch folder so it doesn't
    fight the single-instance lock.)
-9. **Never commit `odds.config.json`, `bets/`, or `dist/`.** They're gitignored. The repo is
+9. **Never commit `odds.config.json`, `publisher/credentials.json`, `bets/`, or `dist/`.** They're gitignored. The repo is
    public.
 10. **Stay honest.** See the next section — this is the one that matters most here.
 
@@ -133,9 +142,15 @@ corners line, Dortmund's players on Bayern's page.
 
 ## Current state (September 2026)
 
-Working: live tracking, xG, pitch with lineups and shot map, five tabs, the card with its
-guards, the bet record with CLV, the model scorecard with scorer grading, installers,
-cross-competition form and projections.
+Working: the website (Firestore + GitHub Actions publisher + Vercel live functions) for the
+Premier League and the Champions League, live tracking, xG, pitch with lineups and shot map,
+five tabs, the card with its guards, the bet record with CLV, the model scorecard with scorer
+grading, installers, cross-competition form and projections.
+
+Next competitions: **La Liga** (ESPN `esp.1`, Odds API `soccer_spain_la_liga`, OddsPapi 8,
+FanDuel 117) and **MLS** (`usa.1`, `soccer_usa_mls`, OddsPapi 242, FanDuel 141 — conference
+tables, plus a playoff bracket the renderer doesn't draw yet). Those ids were verified in
+September 2026.
 
 Known gaps, roughly in priority order:
 

@@ -5,7 +5,7 @@
 //   readJson  read one of those back (the publisher's own schedule, the slate)
 //   slips     parlays the owner tracked on the page, waiting to be logged
 //
-// Credentials: STARBALL_PUBLISHER_EMAIL / STARBALL_PUBLISHER_PASSWORD (the workflow's secrets), or
+// Credentials: FUTBOL_PUBLISHER_EMAIL / FUTBOL_PUBLISHER_PASSWORD (the workflow's secrets), or
 // publisher/credentials.json { "email", "password" } when run by hand (gitignored).
 
 import { readFileSync } from "node:fs";
@@ -21,10 +21,10 @@ import { COMP } from "../competition.mjs";
 const DOC_CAP = 1_000_000; // Firestore's per-document limit is 1 MiB, fields and names included
 
 function credentials() {
-  const { STARBALL_PUBLISHER_EMAIL: email, STARBALL_PUBLISHER_PASSWORD: password } = process.env;
+  const { FUTBOL_PUBLISHER_EMAIL: email, FUTBOL_PUBLISHER_PASSWORD: password } = process.env;
   if (email && password) return { email, password };
   try { return JSON.parse(readFileSync(new URL("./credentials.json", import.meta.url), "utf8")); }
-  catch { throw new Error("no publisher login: set STARBALL_PUBLISHER_EMAIL + STARBALL_PUBLISHER_PASSWORD or write publisher/credentials.json"); }
+  catch { throw new Error("no publisher login: set FUTBOL_PUBLISHER_EMAIL + FUTBOL_PUBLISHER_PASSWORD or write publisher/credentials.json"); }
 }
 
 export async function connect() {

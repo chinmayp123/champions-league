@@ -4,8 +4,9 @@ Every feed the app reads, what it provides, what it costs, and how it fails. All
 wrapped so a failure returns `null` and the caller degrades — see the best-effort rule in
 [AGENTS.md](AGENTS.md).
 
-Competition-specific ids for each feed live in `competition.mjs`, so repointing at another
-tournament is a config change.
+Competition-specific ids for each feed live in `competition.mjs`, one entry per competition
+(Premier League, Champions League; the World Cup kept), so adding one is a config change
+plus a publisher pass and a live function on the website.
 
 ---
 
@@ -35,7 +36,7 @@ isn't gated. That's what the module reads.
 
 The team page is what makes matchday one work: `recentMatches()` takes a club's last three
 competitive games from wherever it last played (friendlies skipped), so form, corner and
-saves projections and scorer numbers exist before any Champions League history does.
+saves projections and scorer numbers exist before a competition has any history of its own.
 
 Unofficial and brittle if the pages restructure. Player headshots come from
 `images.fotmob.com/image_resources/playerimages/<id>.png` with an initials fallback.
@@ -44,7 +45,9 @@ Unofficial and brittle if the pages restructure. Player headshots come from
 Public JSON. Provides FanDuel's moneyline, spread and total (book id 69 plus state
 variants), and the **public betting splits**: share of tickets versus share of money per
 outcome. The money-versus-tickets divergence is the only sharp-money signal in the free
-stack. This is also the primary odds source when no Odds API key is set.
+stack. This is also the primary odds source when no Odds API key is set. Its undated
+scoreboard lists only the games around "now" (4 of a Saturday's 37 in the small hours), so
+today's and tomorrow's dated boards (`&date=YYYYMMDD`, US Eastern days) are read as well.
 
 ### FanDuel public sportsbook API — corners, BTTS, player prices (`fanduel.mjs`, no key)
 The same JSON FanDuel's own site fetches, with a public app key. Provides **total match
@@ -52,9 +55,11 @@ corners** over/under, **both teams to score**, and **anytime scorer / shots on t
 prices. Prices sit at `runners[].winRunnerOdds.americanDisplayOdds.americanOdds`, lines at
 `runners[].handicap`.
 
-Champions League events come off the soccer SPORT page
-(`content-managed-page?page=SPORT&eventTypeId=1`) filtered by FanDuel's `competitionId`
-228; there's no custom competition page. Optional config: `fanduelRegion` (your state
+League events come off the soccer SPORT page
+(`content-managed-page?page=SPORT&eventTypeId=1`) filtered by FanDuel's `competitionId` —
+228 Champions League, 10932509 Premier League (117 La Liga, 141 MLS); there are no custom
+competition pages. Player markets post late: early on a matchday an event can carry only
+two markets, which reads as "no props", not as a matching failure. Optional config: `fanduelRegion` (your state
 subdomain, default `nj`) and `fanduelWorldCupPageId` (only for competitions that do have a
 custom page).
 
@@ -66,7 +71,10 @@ de-vig against, therefore no honest edge.
 draw-no-bet, team totals and Asian handicaps across books, which is what lets the Builder
 show a real "best price" and the card price markets FanDuel alone doesn't cover. Books to
 try are configurable (`oddspapiBooks`, default `fanduel,bet365`); responses are cached 30
-minutes to 12 hours because pre-match lines barely move.
+minutes to 12 hours because pre-match lines barely move. Tournament ids: 7 Champions
+League, 17 Premier League (8 La Liga, 242 MLS). Every call is counted: the website's
+publisher caps each competition at its monthly `oddspapiBudget` (Champions League 60,
+Premier League 90), because each run is a fresh process whose caches start empty.
 
 **Watch for stale lines.** A ±0.5 handicap from a line shop that beats FanDuel's moneyline
 on the same outcome is a stale price, not value — the card guards against exactly that.
@@ -102,7 +110,8 @@ Every feed spells clubs differently: `Bayern Munich` / `Bayern München`, `Inter
 `Paris Saint-Germain` / `PSG`. `teams.mjs` is the single matcher — diacritics folded,
 aliases canonicalised, generic tokens dropped, every distinctive token of the shorter name
 required in the longer one, and **abbreviations matched only by exact equality**. All 36
-clubs in the current field resolve against every feed.
+Champions League clubs resolve against every feed, and all 20 Premier League clubs against
+FotMob and FanDuel (FanDuel's `Nottm Forest` needed an alias).
 
 This is not a nicety. The earlier per-module substring matchers put Dortmund's players on
 Bayern's page and City's on United's, because ESPN's `MUN` and `MAN` codes appear inside

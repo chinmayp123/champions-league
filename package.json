@@ -1,10 +1,10 @@
 {
-  "name": "starball-lab",
+  "name": "futbol-lab",
   "version": "1.1.0",
-  "description": "Starball Lab \u2014 Champions League match tracker + betting harness (desktop widget)",
+  "description": "Futbol Lab \u2014 football match tracker + betting harness (website + desktop widget)",
   "type": "module",
   "bin": {
-    "champions-league": "./cli.mjs"
+    "futbol-lab": "./cli.mjs"
   },
   "scripts": {
     "start": "node cli.mjs",
@@ -22,9 +22,9 @@
   },
   "main": "widget/main.cjs",
   "build": {
-    "appId": "lab.starball.widget",
-    "productName": "Starball Lab",
-    "artifactName": "Starball-Lab-Setup-${version}.${ext}",
+    "appId": "lab.futbol.widget",
+    "productName": "Futbol Lab",
+    "artifactName": "Futbol-Lab-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
@@ -54,7 +54,7 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Starball Lab"
+      "shortcutName": "Futbol Lab"
     },
     "mac": {
       "target": [
@@ -70,7 +70,7 @@
       "category": "public.app-category.sports"
     },
     "dmg": {
-      "artifactName": "Starball-Lab-${version}-${arch}.${ext}"
+      "artifactName": "Futbol-Lab-${version}-${arch}.${ext}"
     }
   }
 }

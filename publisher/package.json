@@ -1,6 +1,6 @@
 {
-  "name": "starball-lab-publisher",
-  "description": "Runs the Starball Lab data layer on a GitHub Actions cron and writes the views to Firestore for the Pages site",
+  "name": "futbol-lab-publisher",
+  "description": "Runs the Futbol Lab data layer on a GitHub Actions cron and writes the views to Firestore for the website",
   "private": true,
   "type": "module",
   "scripts": {

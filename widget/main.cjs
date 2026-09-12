@@ -8,10 +8,16 @@ const { pathToFileURL } = require("url");
 
 // Unpackaged Electron apps all share one profile folder ("Electron") unless they name themselves,
 // which made the single-instance lock, the window state and the data folder collide with the
-// user's other Electron projects (launching Starball while another was running showed THAT app).
+// user's other Electron projects (launching the widget while another was running showed THAT app).
 // Name the app before anything touches userData so it gets its own folder.
-app.setName("Starball Lab");
-if (!app.isPackaged) app.setPath("userData", path.join(app.getPath("appData"), "Starball Lab"));
+app.setName("Futbol Lab");
+if (!app.isPackaged) app.setPath("userData", path.join(app.getPath("appData"), "Futbol Lab"));
+// the app was Starball Lab until September 2026: the first time the new folder is missing, carry the
+// old one over (window state, and once installed the keys and the bet log)
+try {
+  const before = path.join(app.getPath("appData"), "Starball Lab");
+  if (!fs.existsSync(app.getPath("userData")) && fs.existsSync(before)) fs.cpSync(before, app.getPath("userData"), { recursive: true });
+} catch { /* start fresh */ }
 const STATE_FILE = path.join(app.getPath("userData"), "widget-state.json");
 const DEFAULTS = { x: null, y: null, expanded: false, query: null, pinned: true, openAtLogin: true, ew: null, eh: null };
 function loadState() {
@@ -41,7 +47,7 @@ let lastData = null;
 // the user's files (odds.config.json with their keys, the bet log) live in Electron's per-user
 // data folder once the app is installed — the repo itself while running from source
 const DATA_DIR = app.isPackaged ? app.getPath("userData") : path.join(__dirname, "..");
-process.env.STARBALL_DATA_DIR = DATA_DIR;
+process.env.FUTBOL_DATA_DIR = DATA_DIR;
 
 async function loadLib() {
   // dynamic import of an absolute path needs a file:// URL on Windows
@@ -175,10 +181,10 @@ function showWidget() {
 }
 
 function buildTray() {
-  // the starball, rasterised by widget/make-icon.mjs (tray@2x.png is picked up for HiDPI)
+  // the Futbol Lab mark, rasterised by widget/make-icon.mjs (tray@2x.png is picked up for HiDPI)
   const img = nativeImage.createFromPath(path.join(__dirname, "tray.png"));
   tray = new Tray(img);
-  tray.setToolTip("Starball Lab · Champions League");
+  tray.setToolTip("Futbol Lab");
   const menu = Menu.buildFromTemplate([
     { label: "Show / hide", click: () => { if (win?.isVisible()) win.hide(); else showWidget(); } },
     { label: "Refresh now", click: () => poll() },
@@ -197,7 +203,7 @@ function buildTray() {
 }
 
 // one identity for the taskbar group, toasts and the desktop shortcut (otherwise it's "Electron")
-app.setAppUserModelId("starball-lab");
+app.setAppUserModelId("futbol-lab");
 // one copy at a time: launching again just brings the running one to the front
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.on("second-instance", () => showWidget());

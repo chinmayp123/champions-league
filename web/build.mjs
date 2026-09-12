@@ -15,7 +15,7 @@ import { COMPETITIONS, SITE_COMPETITIONS } from "../competition.mjs";
 const at = (p) => new URL(`../${p}`, import.meta.url);
 const OUT = at("site/");
 // the Vercel live functions (/api/live/<code>); the Vercel-hosted copy of the site calls them same-origin
-const LIVE_BASE = process.env.STARBALL_LIVE_BASE || "https://starball-lab.vercel.app/api/live";
+const LIVE_BASE = process.env.FUTBOL_LIVE_BASE || "https://futbol-lab.vercel.app/api/live";
 
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
