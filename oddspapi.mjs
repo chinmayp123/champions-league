@@ -22,7 +22,12 @@ const KEY = process.env.ODDSPAPI_KEY || cfg().oddspapiKey || null;
 // two to limit how many calls a cache-miss can cost against the 250-req/month free quota.
 const BOOKS = (process.env.ODDSPAPI_BOOKS || cfg().oddspapiBooks || "fanduel,bet365").split(",").map((s) => s.trim()).filter(Boolean);
 
+// calls this process has made, and a cap the website's publisher sets from the competition's monthly
+// budget (the free tier is shared with Pick Six). Past the cap every call fails like a dead feed.
+export const oddspapiUsage = { calls: 0, cap: Infinity };
 const get = async (path) => {
+  if (oddspapiUsage.calls >= oddspapiUsage.cap) throw new Error("OddsPapi monthly budget for this competition is spent");
+  oddspapiUsage.calls++;
   const r = await fetch(`${API}${path}${path.includes("?") ? "&" : "?"}apiKey=${KEY}`, { headers: H });
   if (!r.ok) throw new Error(`OddsPapi HTTP ${r.status}`);
   return r.json();

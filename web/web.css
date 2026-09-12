@@ -7,3 +7,9 @@
 /* the sign-in / account button sits with the tabs — in compact (phones) too, or there's no way to sign in */
 #btn-auth.auth { margin-left: 4px; }
 .compact #btn-auth.auth { margin-left: 0; padding-left: 6px; padding-right: 6px; }
+
+/* competition switcher: every competition as a pill; compact shows the active one and a click moves on */
+.comps { display: flex; align-items: center; gap: 2px; margin-right: 8px; }
+.comps .comp { padding-left: 9px; padding-right: 9px; }
+.compact .comps { margin-right: 0; }
+.compact .comps .comp:not(.active) { display: none; }

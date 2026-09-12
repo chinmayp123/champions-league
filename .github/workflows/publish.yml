@@ -1,7 +1,7 @@
-# Starball Lab publisher: runs the data layer every 5 minutes and writes the views to Firestore for
-# the GitHub Pages site (see publisher/publish.mjs). Free — Actions minutes are unlimited on a public
-# repo. Caveats: GitHub often starts scheduled runs 5–20 minutes late, and it pauses a schedule after
-# 60 days with no commits to the repo.
+# Publisher: runs the data layer every 5 minutes and writes the views to Firestore for the website
+# (see publisher/publish.mjs). One pass per competition — the data layer picks its competition when
+# it loads. Free — Actions minutes are unlimited on a public repo. Caveats: GitHub often starts
+# scheduled runs 5–20 minutes late, and it pauses a schedule after 60 days with no commits.
 name: publish
 on:
   schedule:
@@ -16,8 +16,10 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 14
     env:
+      # keep in step with SITE_COMPETITIONS in competition.mjs
+      COMPETITIONS: "epl ucl"
       STARBALL_PUBLISHER_EMAIL: ${{ secrets.STARBALL_PUBLISHER_EMAIL }}
       STARBALL_PUBLISHER_PASSWORD: ${{ secrets.STARBALL_PUBLISHER_PASSWORD }}
     steps:
@@ -29,12 +31,19 @@ jobs:
           cache-dependency-path: publisher/package-lock.json
       - run: npm ci --prefix publisher
 
+      # a competition that fails doesn't stop the others; the step still fails so it shows up
       - name: Live (free feeds only, no odds keys)
-        run: node publisher/publish.mjs live
+        run: |
+          status=0
+          for c in $COMPETITIONS; do COMPETITION=$c node publisher/publish.mjs live || status=1; done
+          exit $status
 
-      - name: Card, builder, closing prices (odds keys, rationed)
+      - name: Card, builder, closing prices (odds keys, rationed per competition)
         if: ${{ !cancelled() }}
-        run: node publisher/publish.mjs keyed
+        run: |
+          status=0
+          for c in $COMPETITIONS; do COMPETITION=$c node publisher/publish.mjs keyed || status=1; done
+          exit $status
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}

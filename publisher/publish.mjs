@@ -25,7 +25,8 @@ import * as store from "../store.mjs";
 import * as lib from "../lib.mjs";
 import * as betlog from "../betlog.mjs";
 import * as parlays from "../parlays.mjs";
-import { compMeta } from "../competition.mjs";
+import { oddspapiUsage } from "../oddspapi.mjs";
+import { COMP, compMeta } from "../competition.mjs";
 import { connect } from "./firestore.mjs";
 
 const MODE = process.argv[2];
@@ -143,6 +144,10 @@ function laClock(t) {
 async function keyed() {
   const now = Date.now();
   const la = laClock(now);
+  // OddsPapi's free calls are shared across competitions and with Pick Six: cap this one's month
+  const month = la.date.slice(0, 7);
+  if (jobs.oddspapi?.month !== month) jobs.oddspapi = { month, calls: 0 };
+  oddspapiUsage.cap = Math.max(0, (COMP.oddspapiBudget ?? 60) - jobs.oddspapi.calls);
   const slate = (await fb.readJson(["view", "slate"]))?.matches || [];
   const nextKick = slate.filter((m) => m.state === "pre").map((m) => Date.parse(m.date)).filter((k) => k > now).sort((a, b) => a - b)[0] ?? null;
 
@@ -189,11 +194,13 @@ try {
   console.error(e);
   process.exitCode = 1;
 } finally {
+  if (MODE === "keyed" && jobs.oddspapi) jobs.oddspapi.calls += oddspapiUsage.calls; // counted even if the run failed
   // the page's freshness chip reads this; the Odds API remainder shows how much quota is left
   await put(["view", "status"], {
     liveAt: jobs.liveAt ?? null, keyedAt: jobs.keyedAt ?? null,
     liveError: jobs.liveError ?? null, keyedError: jobs.keyedError ?? null,
     cardDate: jobs.cardDate ?? null, oddsRemaining: lib.oddsState.remaining,
+    oddspapi: jobs.oddspapi ? { ...jobs.oddspapi, budget: COMP.oddspapiBudget ?? 60 } : null,
   });
   await fb.publish(["publisher", "jobs"], JSON.stringify(jobs)).catch((e) => say("could not save jobs:", e.message));
   await fb.close();

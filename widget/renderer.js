@@ -329,7 +329,7 @@ function render() {
   app.classList.toggle("ko", ko);
   const md = !ko && m && m.matchday;
   roundEl.hidden = !(ko || md);
-  if (md) roundEl.textContent = `MD ${md}`;
+  if (md) roundEl.textContent = `${last?.comp?.roundPrefix || "MD"} ${md}`;
   if (ko) roundEl.textContent = `${roundShort(m.round.slug) || m.round.label}${m.round.leg ? ` L${m.round.leg.n}` : ""}`;
   thirdEl.hidden = true; tickerEl.hidden = true;
   body.classList.remove("split-host");
@@ -350,7 +350,7 @@ function render() {
 
 // ── MATCHDAY: hero for the tracked game, the card, the slate ─────────────────
 function renderMatchday() {
-  subEl.textContent = `${compTitle()} · ${app.classList.contains("ko") ? "knockout" : "league phase"} · ${(last?.matches || []).filter((mt) => mt.live).length || "no"} live`;
+  subEl.textContent = `${compTitle()} · ${app.classList.contains("ko") ? "knockout" : (last?.comp?.phaseName || "league phase").toLowerCase()} · ${(last?.matches || []).filter((mt) => mt.live).length || "no"} live`;
   const wrap = h("div", { class: "matchday" });
   if (!last) { wrap.appendChild(spinner("Fetching the slate…")); return wrap; }
   const m = last.match;
@@ -1689,14 +1689,15 @@ function renderStandings(data) {
   if (data.error) { wrap.appendChild(h("div", { class: "center", text: `Couldn’t load: ${data.error}` })); return wrap; }
   if (data.groupStageDone) return renderBracket(wrap, data);
   if (!data.groups || !data.groups.length) { wrap.appendChild(emptyState("No standings yet.")); return wrap; }
-  const ucl = /^ucl/.test((data.comp && data.comp.key) || "");
-  const zoneLabel = (e) => e.zone === "adv" ? (ucl ? "R16" : "Through") : e.zone === "po" ? "Play-off" : e.advanced ? "Through" : "Out";
-  const total = data.groups.reduce((n, g) => n + g.entries.length, 0);
+  // the competition's own words and zones (compMeta in competition.mjs)
+  const comp = data.comp || {};
+  const table = !!comp.tableSub; // one ranked table (a league phase or a domestic league), not groups
+  const zoneLabel = (e) => (comp.zoneLabels || {})[e.zone] ?? (e.zone === "adv" || e.advanced ? "Through" : e.zone === "po" ? "Play-off" : "Out");
   const played = Math.max(0, ...data.groups.flatMap((g) => g.entries.map((e) => e.played || 0)));
-  subEl.textContent = ucl ? `League phase · ${total} clubs · 8 matchdays · top 8 straight to the R16` : `Group stage · ${data.groups.length} groups`;
+  subEl.textContent = table ? comp.tableSub : `Group stage · ${data.groups.length} groups`;
   wrap.appendChild(h("div", { class: "today-head" }, [
-    h("div", {}, [h("div", { class: "eyebrow", text: ucl ? `League phase · after MD ${played}` : "Group stage" }), h("div", { class: "vh" }, [txt("Table "), h("span", { class: "sub", text: (data.comp && data.comp.standingsHint) || "green = advancing" })])]),
-    h("div", {}, [h("div", { class: "picks-sub", text: ucl ? "Two-legged ties from Feb · bracket replaces this once the phase ends" : "bracket replaces this once the groups finish" }), h("div", { class: "picks-sub", text: "tap a club to open its next game" })]),
+    h("div", {}, [h("div", { class: "eyebrow", text: table ? `${comp.phaseName} · after ${comp.roundPrefix} ${played}` : "Group stage" }), h("div", { class: "vh" }, [txt("Table "), h("span", { class: "sub", text: comp.standingsHint || "green = advancing" })])]),
+    h("div", {}, [h("div", { class: "picks-sub", text: comp.tableNote || "bracket replaces this once the groups finish" }), h("div", { class: "picks-sub", text: "tap a club to open its next game" })]),
   ]));
   const mine = new Set(last?.match ? [last.match.home.abbr, last.match.away.abbr] : []);
   // last result + next fixture per club, from the slate the widget already carries
@@ -1713,8 +1714,8 @@ function renderStandings(data) {
     const home = up.homeAbbr === abbr;
     return { abbr: home ? up.awayAbbr : up.homeAbbr, logo: home ? up.awayLogo : up.homeLogo, home, when: up.live ? (up.statusText || "LIVE") : `${fmtDay(up.date).replace(/,.*$/, "")} ${fmtTime(up.date)}`, id: up.id, live: !!up.live };
   };
-  const CUT = { adv: "Places 1–8 · straight to the round of 16", po: "Places 9–24 · two-legged play-off in February for the last eight R16 spots", out: "Places 25–36 · out of Europe" };
-  const headRow = () => h("div", { class: "tr h" }, ["#", "", "Club · domestic league", "P", "W-D-L", "GD", "Pts", "Last", "Next", "Zone"].map((t, i) => h("span", { class: i === 4 ? "wdl" : i === 7 ? "last" : i === 8 ? "next" : i === 9 ? "zone" : i === 0 ? "rk" : "", text: t })));
+  const CUT = comp.cuts || {};
+  const headRow = () => h("div", { class: "tr h" }, ["#", "", comp.format === "league" ? "Club" : "Club · domestic league", "P", "W-D-L", "GD", "Pts", "Last", "Next", "Zone"].map((t, i) => h("span", { class: i === 4 ? "wdl" : i === 7 ? "last" : i === 8 ? "next" : i === 9 ? "zone" : i === 0 ? "rk" : "", text: t })));
   const row = (e) => {
     const lr = lastOf(e.abbr), nx = nextOf(e.abbr);
     const z = e.zone || (e.advanced ? "adv" : "out");
@@ -1740,7 +1741,7 @@ function renderStandings(data) {
     for (const e of g.entries) {
       const z = e.zone || (e.advanced ? "adv" : "out");
       // a labelled cut line where the zone changes (only when the competition has zones)
-      if (ucl && z !== lastZone) { tbl.appendChild(h("div", { class: `cut ${z}` }, [h("i"), txt(CUT[z] || "")])); lastZone = z; }
+      if (comp.cuts && z !== lastZone) { tbl.appendChild(h("div", { class: `cut ${z}` }, [h("i"), txt(CUT[z] || "")])); lastZone = z; }
       tbl.appendChild(row(e));
     }
     wrap.appendChild(tbl);

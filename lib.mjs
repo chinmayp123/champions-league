@@ -1326,6 +1326,7 @@ function foldLegs(games) {
 // knockout window is scanned in one ranged call — a rolling window anchored on today drops the
 // early rounds off the bracket as the tournament progresses.
 async function scanKnockout() {
+  if (!COMP.knockoutWindow) return []; // a domestic league has no bracket
   const [from, to] = COMP.knockoutWindow;
   const board = await scoreboardRange(from, to).catch(() => ({ events: [] }));
   const seen = new Set(), byRound = new Map();
@@ -1382,7 +1383,7 @@ export async function getStandings() {
       for (const e of entries) e.zone = (COMP.zones.find((z) => e.rank != null && e.rank <= z.upTo) || {}).cls || null;
       return { name: g.name || g.abbreviation || "Group", entries };
     });
-    const groupStageDone = groups.length > 0 && groups.every((g) => g.entries.length && g.entries.every((e) => e.played >= COMP.phaseGames));
+    const groupStageDone = COMP.koOrder.length > 0 && groups.length > 0 && groups.every((g) => g.entries.length && g.entries.every((e) => e.played >= COMP.phaseGames));
     const knockout = await scanKnockout().catch(() => []);
     const data = { groups, groupStageDone, knockout, comp: compMeta() };
     standingsCache = { at: now, data };

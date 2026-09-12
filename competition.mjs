@@ -1,10 +1,11 @@
-// competition — the ONE place that says which tournament the tracker is pointed at.
+// competition — the ONE place that says which competition the tracker is pointed at.
 //
 // Every data client (ESPN, The Odds API, OddsPapi, FotMob, FanDuel) keys off a per-competition
-// identifier, and the widget's phase/knockout handling depends on the format. Both live here so
-// repointing the whole tool is a config change, not a code hunt. The active competition is
-// chosen by `"competition"` in odds.config.json (or the COMPETITION env var); default is the
-// Champions League. The World Cup entry is kept as the reference the tool was built on.
+// identifier, and the views' phase / knockout / table handling depends on the format. Both live
+// here so pointing the tool at a competition is a config change, not a code hunt. The active
+// competition is picked once, when this module loads: the COMPETITION env var, else
+// `"competition"` in odds.config.json, else the Champions League. The website runs one publisher
+// pass and one live function per entry in SITE_COMPETITIONS; the desktop widget shows one.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -23,10 +24,13 @@ export const COMPETITIONS = {
   ucl: {
     key: "ucl-2026-27",
     name: "Champions League",
+    short: "UCL",
     title: "Champions League 26/27",
+    format: "league-phase",                      // "league-phase" (one table → knockout) · "league" (domestic) · "groups"
     espn: "uefa.champions",                      // site.api.espn.com/.../soccer/<espn>
     oddsApiSport: "soccer_uefa_champs_league",   // The Odds API sport key
     oddspapiTournamentId: 7,                     // OddsPapi tournamentId ("uefa-champions-league")
+    oddspapiBudget: 60,                          // OddsPapi calls a month the website's publisher may spend (250 free, shared with Pick Six)
     fotmob: { leagueId: 42, slug: "champions-league" },
     fanduel: { competitionId: 228, customPageId: null }, // FanDuel soccer SPORT page, filtered by competition
     // ESPN season.slug values that are NOT knockout rounds
@@ -34,6 +38,12 @@ export const COMPETITIONS = {
     phaseGames: 8,                               // games per team in the league phase
     // league-phase zones by rank: 1–8 straight to the R16, 9–24 play-off, 25–36 out
     zones: [{ upTo: 8, cls: "adv", label: "R16" }, { upTo: 24, cls: "po", label: "play-off" }],
+    zoneLabels: { adv: "R16", po: "Play-off", out: "Out" },
+    cuts: { adv: "Places 1–8 · straight to the round of 16", po: "Places 9–24 · two-legged play-off in February for the last eight R16 spots", out: "Places 25–36 · out of Europe" },
+    roundPrefix: "MD",                           // the round pill: "MD 1"
+    phaseName: "League phase",
+    tableSub: "League phase · 36 clubs · 8 matchdays · top 8 straight to the R16",
+    tableNote: "Two-legged ties from Feb · bracket replaces this once the phase ends",
     standingsHint: "green = straight to R16 · amber = play-off round · top 8 / 9–24",
     // knockout rounds in bracket order (ESPN season.slug) + labels
     koOrder: ["knockout-round-playoffs", "round-of-16", "quarterfinals", "semifinals", "final"],
@@ -47,18 +57,57 @@ export const COMPETITIONS = {
     lookBackDays: 4, lookAheadDays: 21,
     betlogDir: join(DATA_DIR, "bets", "ucl-2026-27"),
   },
+  epl: {
+    key: "epl-2026-27",
+    name: "Premier League",
+    short: "PL",
+    title: "Premier League 26/27",
+    format: "league",
+    espn: "eng.1",
+    oddsApiSport: "soccer_epl",
+    oddspapiTournamentId: 17,
+    oddspapiBudget: 90,
+    fotmob: { leagueId: 47, slug: "premier-league" },
+    fanduel: { competitionId: 10932509, customPageId: null },
+    phaseSlugs: null,                            // one long league: every game belongs to "the phase"
+    phaseGames: 38,
+    // the usual places — domestic cup winners can shift the European ones
+    zones: [{ upTo: 4, cls: "adv", label: "UCL" }, { upTo: 5, cls: "po", label: "UEL" }, { upTo: 17, cls: "mid", label: "" }, { upTo: 20, cls: "rel", label: "down" }],
+    zoneLabels: { adv: "UCL", po: "UEL", mid: "", rel: "Down" },
+    cuts: { adv: "Places 1–4 · Champions League", po: "Place 5 · Europa League", mid: "Places 6–17", rel: "Places 18–20 · relegated" },
+    roundPrefix: "MW",
+    phaseName: "Matchweek",
+    tableSub: "Premier League · 20 clubs · 38 matchweeks",
+    tableNote: "European places can shift with the domestic cup winners",
+    standingsHint: "green = Champions League · blue = Europa League · red = relegation",
+    koOrder: [], koLabel: {}, koShort: {},
+    knockoutWindow: null,                        // no bracket
+    twoLegged: false,
+    // weekend rounds plus the odd midweek one: a week and a half ahead covers the next slate
+    lookBackDays: 4, lookAheadDays: 10,
+    betlogDir: join(DATA_DIR, "bets", "epl-2026-27"),
+  },
   wc: {
     key: "wc-2026",
     name: "World Cup",
+    short: "WC",
     title: "World Cup 2026",
+    format: "groups",
     espn: "fifa.world",
     oddsApiSport: "soccer_fifa_world_cup",
     oddspapiTournamentId: 16,
+    oddspapiBudget: 60,
     fotmob: { leagueId: 77, slug: "world-cup" },
     fanduel: { competitionId: null, customPageId: "fifa-world-cup" },
     phaseSlugs: ["group-stage"],
     phaseGames: 3,
     zones: [{ upTo: 2, cls: "adv", label: "advance" }],
+    zoneLabels: { adv: "Through", out: "Out" },
+    cuts: null,
+    roundPrefix: "MD",
+    phaseName: "Group stage",
+    tableSub: null,                              // groups, not one table
+    tableNote: "bracket replaces this once the groups finish",
     standingsHint: "green = advancing · top 2 per group",
     koOrder: ["round-of-32", "round-of-16", "quarterfinals", "semifinals", "third-place", "3rd-place-match", "final"],
     koLabel: { "round-of-32": "Round of 32", "round-of-16": "Round of 16", quarterfinals: "Quarter-finals", semifinals: "Semi-finals", "third-place": "Third place", "3rd-place-match": "Third place", final: "Final" },
@@ -70,6 +119,9 @@ export const COMPETITIONS = {
   },
 };
 
+// the competitions the website shows, in switcher order (each gets a publisher pass + live function)
+export const SITE_COMPETITIONS = ["epl", "ucl"];
+
 function pick() {
   let key = process.env.COMPETITION;
   if (!key) {
@@ -79,13 +131,20 @@ function pick() {
 }
 
 export const COMP = pick();
-export const isPhaseSlug = (slug) => !slug || COMP.phaseSlugs.includes(slug);
-// plain-data subset the widget shows (title bar, round pills, standings hint)
-export const compMeta = () => ({ key: COMP.key, name: COMP.name, title: COMP.title, koShort: COMP.koShort, standingsHint: COMP.standingsHint, twoLegged: COMP.twoLegged });
+// a domestic league has no phase slugs: every game is part of the one phase
+export const isPhaseSlug = (slug) => !COMP.phaseSlugs || !slug || COMP.phaseSlugs.includes(slug);
+// plain-data subset the views show (title bar, round pills, the table's words and zones)
+export const compMeta = () => ({
+  key: COMP.key, name: COMP.name, short: COMP.short, title: COMP.title, format: COMP.format,
+  koShort: COMP.koShort, standingsHint: COMP.standingsHint, twoLegged: COMP.twoLegged,
+  roundPrefix: COMP.roundPrefix, phaseName: COMP.phaseName, tableSub: COMP.tableSub, tableNote: COMP.tableNote,
+  cuts: COMP.cuts, zoneLabels: COMP.zoneLabels,
+});
 
 // domestic league of each club in this season's field — no feed the widget reads carries it, so
 // it's a season map matched on ESPN's display name (widest patterns last so "Inter" can't grab
-// anything else). Unknown club → null, and the UI just leaves the line out.
+// anything else). Unknown club → null, and the UI just leaves the line out. Pointless inside a
+// domestic league, where every club's league is the competition itself.
 const CLUB_LEAGUES = [
   [/real madrid|barcelona|atl[eé]tico|villarreal|betis/i, "LaLiga"],
   [/arsenal|liverpool|manchester|aston villa/i, "Premier League"],
@@ -105,4 +164,4 @@ const CLUB_LEAGUES = [
   [/sabah|qaraba/i, "Azerbaijan PL"],
   [/celtic|rangers/i, "Scottish Prem"],
 ];
-export const clubLeague = (name) => (CLUB_LEAGUES.find(([re]) => re.test(name || "")) || [])[1] || null;
+export const clubLeague = (name) => (COMP.format === "league" ? null : (CLUB_LEAGUES.find(([re]) => re.test(name || "")) || [])[1] || null);

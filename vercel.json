@@ -5,6 +5,6 @@
   "buildCommand": "node web/build.mjs",
   "outputDirectory": "site",
   "functions": {
-    "api/state.mjs": { "maxDuration": 60 }
+    "api/live/*.mjs": { "maxDuration": 60 }
   }
 }

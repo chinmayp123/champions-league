@@ -5,26 +5,58 @@
 //   · the Vercel live function — a fresh match view for a game that's live or about to be, polled
 //     like the widget did (30 s live, 2 min at the break), because the cron runs late
 // Google sign-in unlocks the owner's record and card and lets the builder queue slips.
+//
+// The site covers several competitions (site-config.js). Each has its own Firestore subtree and
+// live function; the title-bar switcher picks one (?c=<code>, remembered) and reloads the page,
+// since renderer.js caches a competition's card, record and table once fetched.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import { getFirestore, doc, onSnapshot, getDoc, addDoc, collection, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { COMP_KEY, LIVE_API } from "./site-config.js";
+import { COMPETITIONS, LIVE_BASE } from "./site-config.js";
+
+const saved = {
+  get(k) { try { return localStorage.getItem(`futbol.${k}`); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(`futbol.${k}`) : localStorage.setItem(`futbol.${k}`, v); } catch { /* private window */ } },
+};
+
+// ── which competition ────────────────────────────────────────────────────────
+const wanted = new URLSearchParams(location.search).get("c") || saved.get("comp");
+const active = COMPETITIONS.find((c) => c.code === wanted) || COMPETITIONS[0];
+saved.set("comp", active.code);
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const ref = (...path) => doc(db, "competitions", COMP_KEY, ...path);
+const ref = (...path) => doc(db, "competitions", active.key, ...path);
 const parse = (snap) => (snap.exists() ? JSON.parse(snap.get("json")) : null);
 const MIN = 60e3;
-// the Vercel-hosted copy calls its own function; GitHub Pages and localhost call it cross-origin
-const liveUrl = location.hostname.endsWith(".vercel.app") ? "/api/state" : LIVE_API;
+// the Vercel-hosted copy calls its own functions; GitHub Pages and localhost call them cross-origin
+const liveUrl = location.hostname.endsWith(".vercel.app") ? `/api/live/${active.code}` : `${LIVE_BASE}/${active.code}`;
 
-const saved = {
-  get(k) { try { return localStorage.getItem(`starball.${k}`); } catch { return null; } },
-  set(k, v) { try { v == null ? localStorage.removeItem(`starball.${k}`) : localStorage.setItem(`starball.${k}`, v); } catch { /* private window */ } },
-};
+// the switcher: every competition as a pill; in compact mode only the active one shows and a click
+// moves on to the next
+function paintComps() {
+  const box = document.getElementById("comps");
+  if (!box || box.childElementCount) return;
+  for (const c of COMPETITIONS) {
+    const b = document.createElement("button");
+    b.className = `tab comp${c.code === active.code ? " active" : ""}`;
+    b.textContent = c.short;
+    b.title = c.code === active.code ? `${c.name} (showing)` : `Switch to the ${c.name}`;
+    b.addEventListener("click", () => {
+      const compact = document.getElementById("app")?.classList.contains("compact");
+      const next = c.code !== active.code ? c : compact ? COMPETITIONS[(COMPETITIONS.indexOf(active) + 1) % COMPETITIONS.length] : null;
+      if (!next || next.code === active.code) return;
+      saved.set("comp", next.code);
+      const url = new URL(location.href);
+      url.searchParams.set("c", next.code);
+      location.assign(url);
+    });
+    box.appendChild(b);
+  }
+}
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 let user = null;
@@ -68,7 +100,7 @@ async function publicView(name, missing) {
 // ── the live push: slate + the tracked match ─────────────────────────────────
 let onUpdate = null;
 let slate = null, comp = null, slateMissing = false;
-let query = saved.get("query");
+let query = saved.get(`query.${active.code}`);
 let cur = { id: null };
 
 // the same choice getWidgetState makes: the saved pick, else a live game, else the soonest upcoming
@@ -89,7 +121,7 @@ function wantsLive(m) {
 
 function push() {
   if (!onUpdate) return;
-  if (slateMissing) { onUpdate({ error: "nothing published yet — the data job runs every 5 minutes", matches: [], comp }); return; }
+  if (slateMissing) { onUpdate({ error: `nothing published for the ${active.name} yet — the data job runs every 5 minutes`, matches: [], comp }); return; }
   if (!slate || !cur.loaded) return; // don't flash an empty match while its view is on the way
   const useLive = cur.live && cur.liveAt >= (cur.snapAt || 0);
   onUpdate({ match: (useLive ? cur.live : cur.snap) || null, matches: slate, comp });
@@ -151,7 +183,7 @@ window.wc = {
   onConfig: (cb) => setTimeout(() => cb({ expanded, pinned: false, query }), 0),
   setMatch: async (id) => {
     query = id ? String(id) : null;
-    saved.set("query", query);
+    saved.set(`query.${active.code}`, query);
     if (slate) select(pick(slate));
     return query;
   },
@@ -164,7 +196,7 @@ window.wc = {
     await authReady;
     if (!user) return { error: "sign in with the owner account to track a slip" };
     try {
-      await addDoc(collection(db, "competitions", COMP_KEY, "slips"), { payload: JSON.stringify(payload), uid: user.uid, createdAt: serverTimestamp() });
+      await addDoc(collection(db, "competitions", active.key, "slips"), { payload: JSON.stringify(payload), uid: user.uid, createdAt: serverTimestamp() });
       const dec = (payload.legs || []).reduce((p, l) => p * (l.dec || amToDec(l.ml) || 1), 1);
       return { ok: true, queued: true, americanOdds: decToAm(dec) };
     } catch (e) {
@@ -179,6 +211,7 @@ window.wc = {
 };
 
 paintAuth();
+paintComps();
 // renderer.js registers its callbacks as it loads, so it must run after window.wc exists
 const script = document.createElement("script");
 script.src = "renderer.js";

@@ -26,14 +26,23 @@ import { refMatch } from "./teams.mjs";
 // feed's own abbr field only by exact equality — never a substring of a longer name
 const teamMatches = (anTeam, ref) => refMatch([anTeam?.full_name, anTeam?.display_name], ref, anTeam?.abbr);
 
+// the undated board only carries the games around "now" (4 of a Saturday's 37 at 3 a.m. Eastern),
+// so today's and tomorrow's dated boards are read too — dated by US Eastern day, as Action Network keys them
+const etDay = (t) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(t).replace(/-/g, "");
 let _cache = { at: 0, games: null };
 export async function fetchActionGames() {
   const now = Date.now();
   if (_cache.games && now - _cache.at < TTL) return _cache.games;
-  const res = await fetch(SCOREBOARD, { headers: { "User-Agent": UA, "Accept": "application/json" } });
-  if (!res.ok) throw new Error(`Action Network HTTP ${res.status}`);
-  const j = await res.json();
-  _cache = { at: now, games: j.games || [] };
+  const urls = [SCOREBOARD, `${SCOREBOARD}&date=${etDay(now)}`, `${SCOREBOARD}&date=${etDay(now + 86400e3)}`];
+  const boards = await Promise.all(urls.map((u) => fetch(u, { headers: { "User-Agent": UA, "Accept": "application/json" } })
+    .then((res) => (res.ok ? res.json() : null)).then((j) => j?.games || null).catch(() => null)));
+  if (boards.every((b) => b == null)) throw new Error("Action Network unreachable");
+  const byKey = new Map();
+  for (const g of boards.flat().filter(Boolean)) {
+    const k = g.id ?? `${g.start_time}|${(g.teams || []).map((t) => t.id).join("-")}`;
+    if (!byKey.has(k)) byKey.set(k, g);
+  }
+  _cache = { at: now, games: [...byKey.values()] };
   return _cache.games;
 }
 

@@ -475,6 +475,10 @@ td.lead { color: var(--text); }
 .nx b { font: 800 12px/1 var(--cd); color: var(--sub); } .nx.live { color: var(--bet); }
 .cut { display: flex; align-items: center; gap: 10px; height: 22px; padding: 0 14px 0 40px; background: var(--cell); border-top: 1px solid var(--line); font: 500 9px/1 var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--faint); }
 .cut i { width: 8px; height: 8px; display: inline-block; } .cut.adv i { background: var(--bet); } .cut.po i { background: var(--accent); } .cut.out i { background: var(--line3); }
+/* domestic-league zones: mid-table and relegation */
+.tr.mid .rk { border-left-color: var(--line3); } .tr.rel .rk { border-left-color: var(--neg); color: var(--neg); }
+.tr.mid .zone { color: var(--faintest); } .tr.rel .zone { color: var(--neg); }
+.cut.mid i { background: var(--line3); } .cut.rel i { background: var(--neg); }
 .compact .tr { grid-template-columns: 26px 24px minmax(0, 1fr) 30px 40px 40px; padding: 0 8px 0 0; height: 32px; }
 .compact .tr .wdl, .compact .tr .zone, .compact .tr .last, .compact .tr .next, .compact .tr .tracked, .compact .tr .team .lg { display: none; }
 .compact .tr .team { font-size: 13px; } .compact .tr .rk { height: 32px; }
