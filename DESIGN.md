@@ -93,6 +93,9 @@ with `gap`, never margins between siblings, so direct manipulation and reorderin
 | Table row | `.tr` | league table; rank gutter tinted by zone, `.cut` rows label each zone |
 | Pitch | `.pitchwrap` | players `.pl`, shots `.shot`, hotspots `.hs`, one moving popover `.pop` |
 | Bracket tie | `.brk-card` | two rows + meta; braces only drawn once a pairing fully resolves |
+| Day strip | `.cal` + `.cal-day` | Matchday's calendar: a scrolling row of day chips (weekday, date, month on the first chip and the 1st, league marks), the chosen day inverted white; ◀ ▶ jump to the previous/next day with games |
+| League tag | `.glg` | a small outlined label on a game card when the calendar mixes competitions; silver for the Champions League |
+| UCL week | `.ucl-banner`, `:root.ucl-week` | a silver-edged banner plus a page skin — the starball watermark and silver accents return for a Champions League week |
 | Segmented control | `.seg` | layer switches (Lineups / Shots / Both) |
 
 ### The pitch, specifically

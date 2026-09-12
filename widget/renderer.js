@@ -27,7 +27,7 @@ let builderGame = null; // id of the game the board shows
 const builderSel = new Map(); // selected legs, keyed by game|market|pick → leg
 let builderStake = 10;
 let builderMsg = null;  // transient {ok, text} after tracking a built parlay
-let showPast = false;   // matchday: previous-day results expanded?
+let calDay = null;      // matchday calendar: the chosen day (local YYYY-MM-DD)
 let lastUpdateAt = 0;
 let kickoffAt = 0;
 let prevScoreKey = "";
@@ -56,6 +56,9 @@ const decToAm = (d) => (d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 / (
 const fmtTime = (d) => new Date(d).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const fmtDay = (d) => new Date(d).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 const fmtMD = (d) => new Date(d).toLocaleDateString([], { month: "short", day: "numeric" });
+// a match's status line, with a pre-match kickoff in the viewer's own time zone: the data layer's
+// status text is formatted wherever it runs, which on the website is a UTC server
+const kickText = (m) => (m && m.state === "pre" && m.date ? new Date(m.date).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) : m?.statusText || "");
 
 // The Odds API book keys → readable names
 const BOOKS = {
@@ -264,6 +267,12 @@ window.wc.onConfig((cfg) => {
   applyMode(); syncBar();
 });
 window.wc.onUpdate((data) => {
+  // Match / Builder / Table / Record follow one competition; when the active one changes, what was
+  // fetched for the previous one is stale (the card spans every competition, so it stays)
+  const compChanged = !!(last?.comp?.key && data?.comp?.key && last.comp.key !== data.comp.key);
+  if (compChanged) { builder = null; standings = null; record = null; builderGame = null; builderSel.clear(); }
+  // a Champions League week re-skins the page (the ucl-week rules in style.css)
+  document.documentElement.classList.toggle("ucl-week", !!data?.uclWeek);
   last = data;
   lastUpdateAt = Date.now();
   loadingMatch = false;
@@ -276,6 +285,7 @@ window.wc.onUpdate((data) => {
   tickFresh();
   render();
   if (viewMode === "matchday" && !parlays) ensureData("matchday");
+  if (compChanged && (viewMode === "builder" || viewMode === "standings" || viewMode === "record")) ensureData(viewMode);
 });
 
 // CSP-safe SVG sparkline
@@ -348,21 +358,86 @@ function render() {
   renderMatch(last.match);
 }
 
-// ── MATCHDAY: hero for the tracked game, the card, the slate ─────────────────
+// ── MATCHDAY: the calendar — a day strip across every competition, the chosen day's games in kickoff
+// order, the tracked game and tonight's card. On the website `last.matches` holds every competition
+// (rows tagged compCode / compShort) and `last.uclWeek` marks a Champions League week; the desktop
+// widget passes one competition, so the same calendar just has no league tags. ─────────────────────
+const dayKey = (d) => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+const keyDate = (k) => new Date(`${k}T12:00:00`);
+const addDays = (k, n) => { const d = keyDate(k); d.setDate(d.getDate() + n); return dayKey(d); };
 function renderMatchday() {
-  subEl.textContent = `${compTitle()} · ${app.classList.contains("ko") ? "knockout" : (last?.comp?.phaseName || "league phase").toLowerCase()} · ${(last?.matches || []).filter((mt) => mt.live).length || "no"} live`;
+  const matches = last?.matches || [];
+  const liveN = matches.filter((mt) => mt.live).length;
+  const leagues = [...new Set(matches.map((mt) => mt.compShort).filter(Boolean))];
+  const multi = leagues.length > 1;
+  subEl.textContent = multi
+    ? `${last?.uclWeek ? "Champions League week" : "Matchday"} · ${leagues.join(" · ")} · ${liveN || "no"} live`
+    : `${compTitle()} · ${app.classList.contains("ko") ? "knockout" : (last?.comp?.phaseName || "league phase").toLowerCase()} · ${liveN || "no"} live`;
   const wrap = h("div", { class: "matchday" });
   if (!last) { wrap.appendChild(spinner("Fetching the slate…")); return wrap; }
   const m = last.match;
-  const matches = last.matches || [];
 
+  // a Champions League week takes over: this banner, its games first each day, and the ucl-week skin
+  if (last.uclWeek) wrap.appendChild(h("div", { class: "ucl-banner" }, [
+    h("span", { class: "eyebrow", text: "Champions League week" }),
+    h("span", { class: "ucl-banner-t", text: last.uclWeek.label || "" }),
+    h("span", { class: "picks-sub", text: "its games lead every day this week" }),
+  ]));
   if (m) wrap.appendChild(heroFor(m));
-  else wrap.appendChild(emptyState("No match tracked.", "Tap a game below to follow it."));
+  else wrap.appendChild(emptyState("No match tracked.", "Pick a day and tap a game to follow it."));
 
-  // tonight's card — the tracked singles + the for-fun longshot
+  // the day strip: three weeks ahead and one back (re-centred if the chosen day is outside it)
+  const today = dayKey(new Date());
+  const byDay = new Map();
+  for (const mt of matches) { const k = dayKey(mt.date); if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(mt); }
+  const gameDays = [...byDay.keys()].sort();
+  if (!calDay) calDay = byDay.has(today) ? today : gameDays.find((k) => k > today) || gameDays[gameDays.length - 1] || today;
+  const prevDay = gameDays.filter((k) => k < calDay).pop();
+  const nextDay = gameDays.find((k) => k > calDay);
+  let from = addDays(today, -7), to = addDays(today, 21);
+  if (calDay < from || calDay > to) { from = addDays(calDay, -7); to = addDays(calDay, 21); }
+  const strip = h("div", { class: "cal-strip" });
+  for (let k = from, i = 0; k <= to; k = addDays(k, 1), i++) {
+    const d = keyDate(k), games = byDay.get(k) || [];
+    const marks = multi ? [...new Set(games.map((g) => g.compShort).filter(Boolean))] : games.length ? [String(games.length)] : [];
+    strip.appendChild(h("button", {
+      class: `cal-day${k === calDay ? " on" : ""}${k === today ? " today" : ""}${games.length ? "" : " empty"}`,
+      title: `${d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} · ${games.length || "no"} game${games.length === 1 ? "" : "s"}`,
+      onclick: () => { calDay = k; render(); },
+    }, [
+      h("span", { class: "cal-dow", text: k === today ? "Today" : d.toLocaleDateString([], { weekday: "short" }) }),
+      h("span", { class: "cal-num", text: String(d.getDate()) }),
+      h("span", { class: "cal-mon", text: i === 0 || d.getDate() === 1 ? d.toLocaleDateString([], { month: "short" }) : "" }),
+      h("span", { class: "cal-lgs" }, marks.map((s) => h("i", { class: `lg-${s.toLowerCase()}`, text: s }))),
+    ]));
+  }
+  const arrow = (text, k, title) => {
+    const b = h("button", { class: "cal-arrow", text, title, onclick: () => { if (k) { calDay = k; render(); } } });
+    b.disabled = !k;
+    return b;
+  };
+  wrap.appendChild(h("div", { class: "cal" }, [arrow("◀", prevDay, "Previous day with games"), strip, arrow("▶", nextDay, "Next day with games")]));
+  requestAnimationFrame(() => { const on = strip.querySelector(".cal-day.on"); if (on) strip.scrollLeft = on.offsetLeft - strip.clientWidth / 2 + on.offsetWidth / 2; });
+
+  // the chosen day: every game in kickoff order, the Champions League's first on its weeks
+  const lead = (g) => (last.uclWeek && g.compCode === "ucl" ? 0 : 1);
+  const dayGames = (byDay.get(calDay) || []).slice().sort((a, b) => lead(a) - lead(b) || new Date(a.date) - new Date(b.date));
+  const counts = leagues.map((s) => [s, dayGames.filter((g) => g.compShort === s).length]).filter(([, n]) => n);
+  const label = keyDate(calDay).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  wrap.appendChild(h("div", { class: "today-head" }, [
+    h("div", { class: "vh" }, [txt(calDay === today ? "Today " : ""), h("span", { class: "sub", text: `${label} · ${dayGames.length} game${dayGames.length === 1 ? "" : "s"}${multi && counts.length ? ` · ${counts.map(([s, n]) => `${n} ${s}`).join(" · ")}` : ""}` })]),
+    h("div", { class: "picks-sub", text: "dim line = model's predicted final · tap a game to follow it" }),
+  ]));
+  if (dayGames.length) wrap.appendChild(h("div", { class: "gamegrid" }, dayGames.map((mt) => gameCard(mt, m && m.id === mt.id, { tag: multi }))));
+  else wrap.appendChild(h("div", { class: "center", text: nextDay ? `No games this day · next: ${fmtDay(keyDate(nextDay))}` : "No games this day." }));
+  wrap.appendChild(h("div", {}, [
+    h("span", { class: "pick-toggle", text: "↻ Auto-follow the live game", title: "Track whichever game is live (default)", onclick: () => choose(null) }),
+  ]));
+
+  // tonight's card — the tracked singles (every competition, on the website) + the for-fun longshot
   const head = h("div", { class: "today-head" }, [
     h("div", {}, [
-      h("div", { class: "eyebrow", text: parlays && !parlays.error ? `Tonight's card · straight singles · $${parlays.stake} each` : "Tonight's card" }),
+      h("div", { class: "eyebrow", text: parlays && !parlays.error ? `Tonight's card · straight singles · $${parlays.stake} each${multi ? " · every league" : ""}` : "Tonight's card" }),
       h("div", { class: "vh" }, [txt("The card "), h("span", { class: "sub", text: parlays && parlays.singles ? `${parlays.singles.length} single${parlays.singles.length === 1 ? "" : "s"}` : "" })]),
     ]),
     h("div", {}, [
@@ -386,37 +461,6 @@ function renderMatchday() {
     if (parlays.longshot) grid.appendChild(ticket(parlays.longshot, { kind: "for fun · longshot · not tracked", game: "one leg per game", stake: parlays.stake, fun: true }));
     wrap.appendChild(grid);
   }
-
-  // the slate: today + upcoming, grouped by day; previous results behind a toggle
-  const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
-  const past = matches.filter((mt) => new Date(mt.date) < startToday);
-  const rest = matches.filter((mt) => new Date(mt.date) >= startToday);
-  const days = new Map();
-  for (const mt of rest) { const d = fmtDay(mt.date); if (!days.has(d)) days.set(d, []); days.get(d).push(mt); }
-  let first = true;
-  for (const [day, list] of days) {
-    wrap.appendChild(h("div", { class: "today-head" }, [
-      h("div", { class: "vh" }, [txt(first ? "Tonight " : ""), h("span", { class: "sub", text: `${day} · ${list.length} game${list.length === 1 ? "" : "s"}` })]),
-      first ? h("div", { class: "picks-sub", text: "dim line = model's predicted final · tap a game to follow it" }) : null,
-    ]));
-    wrap.appendChild(h("div", { class: "gamegrid" }, list.map((mt) => gameCard(mt, m && m.id === mt.id))));
-    first = false;
-  }
-  if (!days.size) wrap.appendChild(h("div", { class: "center", text: "No upcoming games in the window." }));
-  const tools = h("div", {}, [
-    h("span", { class: "pick-toggle", text: "↻ Auto-follow the live game", title: "Track whichever game is live (default)", onclick: () => choose(null) }),
-  ]);
-  if (past.length) tools.appendChild(h("span", { class: "pick-toggle", style: { "margin-left": "8px" }, onclick: () => { showPast = !showPast; render(); },
-    text: `${showPast ? "▾" : "▸"} Previous results (${past.length})` }));
-  wrap.appendChild(tools);
-  if (showPast && past.length) {
-    const pdays = new Map();
-    for (const mt of past) { const d = fmtDay(mt.date); if (!pdays.has(d)) pdays.set(d, []); pdays.get(d).push(mt); }
-    for (const [day, list] of pdays) {
-      wrap.appendChild(h("div", { class: "today-head" }, [h("div", { class: "vh" }, [h("span", { class: "sub", text: day })])]));
-      wrap.appendChild(h("div", { class: "gamegrid" }, list.map((mt) => gameCard(mt, m && m.id === mt.id))));
-    }
-  }
   return wrap;
 }
 const axisOf = (market) => ({ Moneyline: "result", DNB: "result", Spread: "result", Total: "goals", TeamTotal: "goals", BTTS: "goals", Corners: "goals" })[market] || "player";
@@ -438,7 +482,7 @@ function heroFor(m) {
     h("div", { class: "hmid" }, [
       pre ? h("div", { class: "hscore vs", text: "v" })
         : h("div", { class: "hscore" }, [h("span", { text: String(m.home.score) }), h("span", { class: "hsep", text: "–" }), h("span", { text: String(m.away.score) })]),
-      h("div", { class: `hstat${statCls}` }, [live ? h("span", { class: "dot" }) : null, txt(m.statusText || "")]),
+      h("div", { class: `hstat${statCls}` }, [live ? h("span", { class: "dot" }) : null, txt(kickText(m))]),
     ]),
     h("div", { class: "hteam home" }, [crest(m.away.abbr, m.away.logo, "big"), h("div", { class: "hname" }, [h("span", { class: "hab", text: m.away.abbr }), m.away.league ? h("span", { class: "hleague", text: m.away.league }) : null])]),
   ]));
@@ -456,7 +500,7 @@ function heroFor(m) {
 const splitBet = (bet) => { const i = (bet || "").indexOf(" — "); return i < 0 ? [bet || "", ""] : [bet.slice(0, i), bet.slice(i + 3)]; };
 
 // one slate card: crest · abbr · score | status + model line | score · abbr · crest
-function gameCard(mt, mine) {
+function gameCard(mt, mine, { tag = false } = {}) {
   const [hc, ac] = kitPair(mt.homeColor, mt.awayColor, null);
   const pre = mt.state === "pre";
   const line = mt.pred
@@ -465,6 +509,7 @@ function gameCard(mt, mine) {
   return h("div", { class: `gcard${mine ? " mine" : ""}`, style: { "--a": hc, "--h": ac }, title: `${mt.home} v ${mt.away}`, onclick: () => choose(mt.id) }, [
     h("div", { class: "gteam" }, [crest(mt.homeAbbr, mt.homeLogo), h("span", { class: "gab", text: mt.homeAbbr }), pre ? null : h("span", { class: "gsc", text: String(mt.homeScore) })]),
     h("div", { class: "gmid" }, [
+      tag && mt.compShort ? h("span", { class: `glg lg-${mt.compCode || ""}`, text: mt.compShort }) : null,
       h("span", { class: `gstat${mt.live ? " on" : ""}` }, [mt.live ? h("span", { class: "dot" }) : null, txt(mt.live ? (mt.statusText || "LIVE") : mt.state === "post" ? "FT" : fmtTime(mt.date))]),
       line ? h("span", { class: "gline", text: line }) : null,
     ]),
@@ -566,7 +611,7 @@ function renderMatch(m) {
   else if (pre && m.date) {
     kickoffAt = new Date(m.date).getTime();
     const kt = h("span", { text: fmtCountdown(kickoffAt - Date.now()) }); kt.id = "kick-time";
-    kick.appendChild(txt(`${m.statusText} · in `)); kick.appendChild(kt);
+    kick.appendChild(txt(`${kickText(m)} · in `)); kick.appendChild(kt);
   } else kick.appendChild(txt(m.statusText));
   const facts = [];
   if (p) {
@@ -1038,7 +1083,7 @@ function popContent(m, key) {
     return box;
   }
   if (key === "centre") {
-    head("Match state", m.statusText);
+    head("Match state", kickText(m));
     if (m.possession) row("Possession", `${m.home.abbr} ${m.possession.home}% · ${m.possession.away}% ${m.away.abbr}`);
     if (m.momentum?.length) { const tail = m.momentum.slice(-10); const v = tail.reduce((a, d) => a + d.v, 0) / tail.length; row("Momentum · last 10", `${v >= 0 ? m.home.abbr : m.away.abbr} pressing ${Math.abs(v).toFixed(0)}`); }
     if (m.prediction) row("Model", `${m.home.abbr} ${Math.round(m.prediction.wH * 100)}% · draw ${Math.round(m.prediction.wD * 100)}% · ${m.away.abbr} ${Math.round(m.prediction.wA * 100)}% → ${m.prediction.ph}–${m.prediction.pa}`);

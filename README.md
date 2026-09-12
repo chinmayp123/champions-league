@@ -76,10 +76,14 @@ Barlow Condensed for names, JetBrains Mono for numbers, square corners, a lower 
 crawl — in night navy.
 
 ### Matchday
-The landing view. A hero for the tracked game painted in both clubs' colours with their
-crests as silhouettes and each side's domestic league; tonight's card as ticket cards with a
-five-cell number strip (model %, book %, edge, EV, half-Kelly) and the reasoning; the slate
-as kit-coloured game cards grouped by day. When the card is empty a **Why** panel lists
+The landing view, and a calendar. A day strip marks which leagues play each day; pick a day
+and every game from every competition is listed in kickoff order as a kit-coloured card
+tagged with its league (◀ ▶ jump between days with games). Above it, a hero for the tracked
+game painted in both clubs' colours with their crests as silhouettes; below, tonight's card
+— across every league on the website — as ticket cards with a five-cell number strip (model
+%, book %, edge, EV, half-Kelly) and the reasoning. On a **Champions League week**
+(Monday–Thursday of a week with UCL games) the site opens on the Champions League, a banner
+marks the week, its games lead every day, and the starball watermark comes back. When the card is empty a **Why** panel lists
 every game and the reason it didn't qualify.
 
 ### Match

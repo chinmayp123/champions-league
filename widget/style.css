@@ -695,3 +695,51 @@ td.lead { color: var(--text); }
 .lt { background: var(--panel); padding: 12px 14px; min-width: 0; }
 .lt b { display: block; font: 800 22px/1 var(--cd); color: #fff; } .lt b em { font-style: normal; color: var(--bet); font-size: 16px; margin-left: 6px; } .lt b em.dim { color: var(--dim); } .lt b em.neg { color: var(--neg); }
 .lt i { display: block; margin-top: 5px; font: 600 10px/1.3 var(--mono); letter-spacing: .8px; text-transform: uppercase; color: var(--sub); font-style: normal; }
+
+/* ── matchday calendar: a day strip across every competition, then the chosen day's games ──── */
+.cal { display: flex; align-items: stretch; gap: 6px; margin: 16px 0 4px; }
+.cal-arrow { flex: none; width: 30px; background: var(--cell); border: 1px solid var(--line); color: var(--sub); font: 800 12px/1 var(--cd); cursor: pointer; }
+.cal-arrow:hover:not(:disabled) { color: var(--text); border-color: var(--line3); }
+.cal-arrow:disabled { opacity: .35; cursor: default; }
+.cal-strip { position: relative; flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.cal-strip::-webkit-scrollbar { display: none; }
+.cal-day { flex: none; width: 60px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 6px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; }
+.cal-day:hover { background: var(--panel2); }
+.cal-dow { font: 500 9px/1 var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--faint); }
+.cal-num { font: 800 21px/1 var(--cd); color: var(--text); }
+.cal-mon { font: 500 8px/1 var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--accent); min-height: 8px; }
+.cal-lgs { display: flex; gap: 2px; min-height: 11px; }
+.cal-lgs i { font: 600 7.5px/11px var(--mono); font-style: normal; padding: 0 3px; background: var(--line2); color: var(--sub); letter-spacing: .3px; }
+.cal-lgs i.lg-ucl { background: color-mix(in srgb, var(--star) 22%, var(--line2)); color: var(--star); }
+.cal-day.empty { opacity: .45; }
+.cal-day.today .cal-dow { color: var(--accent); }
+.cal-day.on { background: var(--text); border-color: var(--text); }
+.cal-day.on .cal-num, .cal-day.on .cal-dow, .cal-day.on .cal-mon { color: var(--ink); }
+.cal-day.on .cal-lgs i { background: var(--ink); color: var(--text); }
+.compact .cal { margin-top: 12px; }
+.compact .cal-day { width: 48px; }
+.compact .cal-num { font-size: 17px; }
+
+/* the league on a game card in the all-competitions calendar */
+.glg { align-self: center; font: 600 8.5px/1 var(--mono); letter-spacing: .6px; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line2); padding: 2px 4px; }
+.glg.lg-ucl { color: var(--star); border-color: var(--gold-dim); }
+
+/* ── Champions League week: the banner, and the skin (class on <html>, set by the renderer) ─── */
+.ucl-banner { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 12px; padding: 11px 14px; border: 1px solid var(--gold-dim); border-left: 4px solid var(--star); background: linear-gradient(90deg, color-mix(in srgb, var(--star) 11%, transparent), transparent 70%); }
+.ucl-banner .eyebrow { color: var(--star); }
+.ucl-banner-t { font: 800 18px/1 var(--cd); text-transform: uppercase; letter-spacing: .4px; color: var(--text); }
+.ucl-banner .picks-sub { margin-left: auto; }
+:root.ucl-week {
+  /* the starball watermark comes back for the week (the app's mark before it became Futbol Lab) */
+  --wm: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22 opacity=%220.06%22%3E%3Cdefs%3E%3Cpath id=%22st%22 d=%22M0.00,-10.00 L2.47,-3.40 L9.51,-3.09 L3.99,1.30 L5.88,8.09 L0.00,4.20 L-5.88,8.09 L-3.99,1.30 L-9.51,-3.09 L-2.47,-3.40 Z%22/%3E%3CclipPath id=%22cp%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22/%3E%3C/clipPath%3E%3C/defs%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%223%22/%3E%3Cg clip-path=%22url(%23cp)%22 fill=%22%23ffffff%22%3E%3Cuse href=%22%23st%22 transform=%22translate(50 50) scale(1.6)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 23.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 77.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 7.6) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(99.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(1.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 7.6) scale(1.1)%22/%3E%3C/g%3E%3C/svg%3E");
+  --wm-solid: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22 opacity=%221%22%3E%3Cdefs%3E%3Cpath id=%22st%22 d=%22M0.00,-10.00 L2.47,-3.40 L9.51,-3.09 L3.99,1.30 L5.88,8.09 L0.00,4.20 L-5.88,8.09 L-3.99,1.30 L-9.51,-3.09 L-2.47,-3.40 Z%22/%3E%3CclipPath id=%22cp%22%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22/%3E%3C/clipPath%3E%3C/defs%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2246%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%223%22/%3E%3Cg clip-path=%22url(%23cp)%22 fill=%22%23ffffff%22%3E%3Cuse href=%22%23st%22 transform=%22translate(50 50) scale(1.6)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 23.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(73.4 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(50.0 77.0) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 63.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(26.6 36.5) scale(1.0)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 7.6) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(99.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(74.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 92.4) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(1.0 50.0) scale(1.1)%22/%3E%3Cuse href=%22%23st%22 transform=%22translate(25.5 7.6) scale(1.1)%22/%3E%3C/g%3E%3C/svg%3E");
+}
+:root.ucl-week .logo-accent { color: var(--star); }
+:root.ucl-week .tab.active { box-shadow: inset 0 -2px 0 var(--star); }
+:root.ucl-week .cal-day.on { box-shadow: inset 0 -3px 0 var(--star); }
+
+/* compact (phones): the day chips are too narrow for league names — one coloured dot per league */
+.cal-lgs i.lg-pl { --lg: #b58cff; } .cal-lgs i.lg-laliga { --lg: #ff9f45; } .cal-lgs i.lg-ucl { --lg: var(--star); }
+.compact .cal-lgs { gap: 3px; align-items: center; }
+.compact .cal-lgs i { width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; background: var(--lg, var(--sub)); border-radius: 50%; }
+.compact .cal-day.on .cal-lgs i { background: var(--lg, var(--ink)); box-shadow: 0 0 0 1px var(--ink); }

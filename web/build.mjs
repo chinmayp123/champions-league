@@ -30,7 +30,7 @@ writeFileSync(new URL("site-config.js", OUT),
 // Firestore and the live API — nothing else. Still no inline script.
 const CSP = [
   "default-src 'none'",
-  "img-src https: data:",
+  "img-src 'self' https: data:",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
   "script-src 'self' https://www.gstatic.com https://apis.google.com",
