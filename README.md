@@ -8,9 +8,10 @@ League.
 
 **On the web:** [futbol-lab.vercel.app](https://futbol-lab.vercel.app) ·
 [chinmayp123.github.io/futbol-lab](https://chinmayp123.github.io/futbol-lab/) — the same
-front end as the desktop widget (below), fed by Firestore. Switch competitions in the title
-bar (`?c=epl`, `?c=laliga`, `?c=ucl`). Match data is public; the bet record, the day's card and slip
-tracking need the owner's Google sign-in.
+front end as the desktop widget (below), fed by Firestore. Every page has its own address —
+`#/today`, `#/league/epl/table`, `#/match/<id>`, `#/bets/record` — so links and the back button
+work. Match data is public; the bet record, the day's card and slip tracking need the owner's
+Google sign-in.
 
 Zero runtime dependencies — Node 18+ and Electron. ESPN, FotMob, FanDuel and Action Network
 are all keyless; two optional keys unlock cross-book line shopping.
@@ -64,30 +65,40 @@ would be public), so it runs elsewhere, all on free tiers:
   Vercel builds it on `vercel deploy --prod`.
 
 The owner signs in with Google, and the account is enrolled once with
-`node publisher/add-owner.mjs <uid>` (the Record tab shows the uid). Full detail in
+`node publisher/add-owner.mjs <uid>` (Bets › Record shows the uid). Full detail in
 [ARCHITECTURE.md](ARCHITECTURE.md#the-website--github-pages--firebase-free-tier--vercel).
 
 ---
 
 ## The widget
 
-Five tabs in a 50px broadcast title bar. The shell is the "Broadcast" design system —
-Barlow Condensed for names, JetBrains Mono for numbers, square corners, a lower third and a
-crawl — in night navy.
+Three places in a 50px broadcast title bar — **Today**, **Leagues ▾**, **Bets** — which
+become a bottom bar on phones. The shell is the "Broadcast" design system — Barlow Condensed
+for names, JetBrains Mono for numbers, square corners, a lower third and a crawl — in night
+navy.
 
-### Matchday
-The landing view, and a calendar. A day strip marks which leagues play each day; pick a day
-and every game from every competition is listed in kickoff order as a kit-coloured card
-tagged with its league (◀ ▶ jump between days with games). Above it, a hero for the tracked
-game painted in both clubs' colours with their crests as silhouettes; below, tonight's card
-— across every league on the website — as ticket cards with a five-cell number strip (model
-%, book %, edge, EV, half-Kelly) and the reasoning. On a **Champions League week**
-(Monday–Thursday of a week with UCL games) the site opens on the Champions League, a banner
-marks the week, its games lead every day, and the starball watermark comes back. When the card is empty a **Why** panel lists
-every game and the reason it didn't qualify.
+### Today
+The landing page, and a calendar. A day strip marks which leagues play each day; pick a day
+and its games are split into one section per league — a header in the league's colour (its
+name opens the league, **Table ›** its table), then kit-coloured cards in kickoff order (◀ ▶
+jump between days with games). On a **Champions League week** (Monday–Thursday of a week
+with UCL games) a banner marks the week, the Champions League's section leads every day,
+and the starball watermark comes back.
+
+### Leagues
+The Leagues menu lists each league with its live or next game. A league has four tabs, and
+the PL / LaLiga / UCL switch in its header keeps the tab you're on — from the Premier League
+table, LaLiga opens the LaLiga table.
+
+- **Overview** — the week (latest results, then the next games) beside the top of the table
+  (and a domestic league's bottom three).
+- **Table** — see [Table](#table) below.
+- **Fixtures** — the league's slate by day: all, upcoming, or results newest first.
+- **Builder** — see [Builder](#builder) below.
 
 ### Match
-The tracked game in depth.
+One game in depth, opened from any card, table row, bracket tie or search. A breadcrumb above
+it goes to its league or its day.
 
 - **Lower third** — crests, score, status and the headline numbers (win probability,
   predicted score, live moneyline, xG per side, other live games).
@@ -122,20 +133,25 @@ folded to aggregate. A domestic league is the same list with its own zones — P
 top four to the Champions League, fifth to the Europa League, bottom three relegated — and
 no bracket.
 
-### Record
-Two scorecards. The **model** scorecard: every pre-match call frozen before kickoff and
-graded at full time — result-right rate, exact scores, over 2.5 and BTTS calls, 1X2 Brier,
-plus scorer projections with a calibration check by band. The **bet** record: leg hit rate,
-Brier, profit, ROI, bankroll curve, calibration, a shadow-fade check, and closing-line value
-per leg.
+### Bets
+**Tonight's card** — every league's singles as ticket cards with a five-cell number strip
+(model %, book %, edge, EV, half-Kelly) and the reasoning, plus the for-fun longshot; when
+the card is empty a **Why** panel lists every game and the reason it didn't qualify.
+
+**Record** — all leagues side by side (settled legs, hit rate, profit, ROI, CLV), or one
+league in full with two scorecards. The **model** scorecard: every pre-match call frozen
+before kickoff and graded at full time — result-right rate, exact scores, over 2.5 and BTTS
+calls, 1X2 Brier, plus scorer projections with a calibration check by band. The **bet**
+record: leg hit rate, Brier, profit, ROI, bankroll curve, calibration, a shadow-fade check,
+and closing-line value per leg.
 
 ### Getting around
-`◀` / `Esc` / `Alt+←` walk back through views. `/` focuses search — a club or a fixture
-opens that match. Any game card, table row or bracket tie is clickable; `↻ Auto-follow`
-returns to whichever game is live. `⤢` toggles a 300px compact mode that keeps the lower
-third, prediction and top picks; the native caption buttons mean Windows 11 Snap Layouts
-works, so several widgets tile 2×2. `📌` toggles always-on-top. Refresh is every 30 s,
-backing off to 2 minutes at halftime.
+`◀` / `Esc` / `Alt+←` and the browser's back button walk the same history; a sub-tab, a day
+or a filter replaces the page rather than stacking up. `/` focuses search — a club or a
+fixture opens that match. `⤢` toggles compact mode (phones start in it): one title-bar row,
+the bottom bar, single-column cards; the native caption buttons mean Windows 11 Snap Layouts
+works in the desktop app. Refresh is every 30 s on a live match, backing off to 2 minutes at
+halftime.
 
 ---
 

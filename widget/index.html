@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self';" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,11 +26,9 @@
         <button id="fresh" class="fresh" title="Click to refresh now" hidden></button>
         <div class="search"><input id="q" type="text" placeholder="Search team   /" autocomplete="off" spellcheck="false" /><div id="q-results" hidden></div></div>
         <button id="back" class="navbtn off" title="Back (Esc)">&#9664;</button>
-        <button id="tab-matchday" class="tab" title="Tonight's slate + the card">Matchday</button>
-        <button id="tab-match" class="tab" title="The tracked match">Match</button>
-        <button id="tab-builder" class="tab" title="Parlay builder">Builder</button>
-        <button id="tab-standings" class="tab" title="League table / bracket">Table</button>
-        <button id="tab-record" class="tab" title="Bet record">Record</button>
+        <button id="tab-today" class="tab nav-tab" title="Every league's games, by day">Today</button>
+        <button id="tab-leagues" class="tab nav-tab" title="A league: overview, table, fixtures, builder" aria-haspopup="menu"><span class="lbl">Leagues</span><svg class="caret" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <button id="tab-bets" class="tab nav-tab" title="Tonight's card and the record, every league">Bets</button>
         <span class="vsep"></span>
         <button id="btn-expand" class="iconbtn" title="Expand / compact">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -41,11 +40,22 @@
     </header>
 
     <main id="main">
-      <!-- lower third + crawl: filled per view (match, builder); hidden elsewhere -->
+      <!-- hub header (a league's name + sub-tabs, Bets' tabs, a match's breadcrumb), then the lower
+           third + crawl (match, builder); each hidden where a page doesn't use it -->
+      <div id="hub" class="hub" hidden></div>
       <div id="third" class="third" hidden></div>
       <div id="ticker" class="ticker" hidden></div>
       <div id="body" class="body"></div>
     </main>
+
+    <!-- phones (compact): the three places as a bottom bar -->
+    <nav id="bnav" class="bnav">
+      <button id="bn-today" class="bn"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 10H20.5M8 3V7M16 3V7" stroke="currentColor" stroke-width="1.8"/></svg><span class="lbl">Today</span></button>
+      <button id="bn-leagues" class="bn" aria-haspopup="menu"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3L19.5 6V11.5C19.5 16 16.3 19.4 12 21C7.7 19.4 4.5 16 4.5 11.5V6L12 3Z" stroke="currentColor" stroke-width="1.8"/></svg><span class="lbl">Leagues</span></button>
+      <button id="bn-bets" class="bn"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3.5 7H20.5V10A2 2 0 0 0 20.5 14V17H3.5V14A2 2 0 0 0 3.5 10V7Z" stroke="currentColor" stroke-width="1.8"/><path d="M14 7V17" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2 2"/></svg><span class="lbl">Bets</span></button>
+    </nav>
+    <!-- the Leagues menu (filled by renderer.js) -->
+    <div id="lg-menu" class="lg-menu" role="menu" hidden></div>
   </div>
   <script src="renderer.js"></script>
 </body>

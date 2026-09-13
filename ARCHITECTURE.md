@@ -186,7 +186,14 @@ scheduled task runs at 10:00: build the card, record it, settle yesterday, write
 ## Render pipeline (the part that surprises people)
 
 `renderer.js` keeps one `last` payload and redraws from scratch on every push. `render()`
-dispatches on `viewMode` (`matchday`/`match`/`builder`/`standings`/`record`).
+dispatches on `route`, parsed from the URL hash: `today` (`#/today[/day]`), `league`
+(`#/league/<code>[/table|fixtures|builder]`), `match` (`#/match/<id>`) and `bets`
+(`#/bets[/record[/<code>]]`). `go(route)` pushes a history entry (or replaces it — sub-tabs,
+days, filters, the league switch); `popstate` re-applies, and `history.state.d` counts depth
+so ◀ knows when there's nowhere back to go. League pages fetch per league code through `wc`
+(`getStandings(code)`, `getParlayMenu(code)`, `getRecord(code)`) into caches kept ten
+minutes. A page's header (league name, switch and sub-tabs; Bets' tabs; a match's
+breadcrumb) goes in `#hub`, above the lower third and outside the scrolling body.
 
 The **match view** is assembled as a flat array of `blocks`, then laid out:
 
@@ -200,8 +207,9 @@ The **match view** is assembled as a flat array of `blocks`, then laid out:
    pitch and match sheet move into `late` and the model's read leads. Once the game is on,
    the pitch leads again.
 
-Compact mode renders the same blocks and hides most with CSS. If you add a section, decide
-what compact does with it.
+Compact mode (phones, narrow windows) renders the same blocks and hides most with CSS; the
+title bar's Today · Leagues · Bets move to the bottom bar (`#bnav`). If you add a section,
+decide what compact does with it.
 
 ---
 
@@ -249,8 +257,8 @@ public), and the Firebase project stays on the free Spark plan (no Cloud Functio
 |---|---|
 | `publisher/publish.mjs` + `.github/workflows/publish.yml` | Every 5 min (GitHub often runs it late), one pass per competition (`COMPETITIONS` in the workflow, `COMPETITION=<code>` per process). `live` — no odds keys: logs slips, publishes the slate, rebuilds match views by urgency (live every run, <2 h to kickoff every run, <36 h every 30 min, finished at FT + once 2 h later) within a 150 s budget, the table every 30 min, the record hourly or when something finished. `keyed` — the only step with the keys: the 10:00 America/Los_Angeles card (settled, recorded, published with the builder), one card/builder refresh ≤90 min before the day's first kickoff, closing prices only for pending legs inside the CLV window, at most every 30 min. OddsPapi calls are counted against the competition's `oddspapiBudget` for the month (in `publisher/jobs`). The schedule lives in `publisher/jobs`, because every run is a fresh process and the in-memory TTLs protect nothing. |
 | `api/live/<code>.mjs` + `api/_live.mjs` (Vercel, `vercel.json`) | `GET /api/live/<code>?q=<ESPN id>` → `lib.getWidgetState` on demand. Each competition is its own function: the wrapper sets `COMPETITION` before loading the shared handler, so the data layer binds to it. Loads the records (frozen call, pregame snapshot, goals bias) but never saves them; no odds keys, so traffic can't spend quota. CDN `s-maxage=20`. |
-| `web/build.mjs` → `site/` | assembles the site from `widget/renderer.js`, `style.css`, `icon.png` and a transformed `index.html` (browser CSP, `wc.js` instead of the renderer tag, the competition switcher, a sign-in button) plus `site-config.js` (the site's competitions and the live API base) — the widget's front end stays the single source. Run by `.github/workflows/pages.yml` and Vercel's build. |
-| `web/wc.js` | `window.wc` for the browser. Reads every competition's slate at once and merges them (rows tagged `compCode`/`compShort`) for the Matchday calendar; Match, Builder, Table and Record follow one *active* competition — the one of the game you open, or the pill you pick (`?c=<code>`, no reload: the renderer drops its cached builder, table and record when `comp.key` changes). Adds `uclWeek` to the payload on Monday–Thursday of a week with Champions League games (the site then opens on it and the renderer sets the `ucl-week` skin). The card is merged across competitions. Beyond that: slate + match view from Firestore snapshots, the live function for a game that's live / ≤90 min out / just finished, the table and builder from `view/*`, the card and record from `private/*` (owner), `trackParlay` queues a `slips` doc the next run logs. Expand is a toggle; pin/hide/quit are no-ops. |
+| `web/build.mjs` → `site/` | assembles the site from `widget/renderer.js`, `style.css`, `icon.png` and a transformed `index.html` (browser CSP, `wc.js` instead of the renderer tag, the Get app and sign-in buttons) plus `site-config.js` (the site's competitions and the live API base) — the widget's front end stays the single source. Run by `.github/workflows/pages.yml` and Vercel's build. |
+| `web/wc.js` | `window.wc` for the browser. Reads every competition's slate at once and merges them (rows tagged `compCode`/`compShort`/`compName`) for Today; `wc.competitions` lists the site's leagues in order and the payload's `comps` carries each one's meta. There is no *active* competition: everything league-specific takes a code — `getStandings(code)`, `getParlayMenu(code)`, `getRecord(code)`, `trackParlay(payload, code)`. `setMatch(id)` opens the game a match page asks for (Firestore snapshot + the live function while it's live / ≤90 min out / just finished) and `setMatch(null)` stops it when the page closes; the payload's `matchId` says which game `match` belongs to. Adds `uclWeek` on Monday–Thursday of a week with Champions League games (the renderer leads Today with it and sets the `ucl-week` skin). The card is merged across competitions. The table and builder come from `view/*`, the card and record from `private/*` (owner); `trackParlay` queues a `slips` doc the next run logs. Expand is a toggle; pin/hide/quit are no-ops. |
 | `firestore.rules` | public read `view/{slate,standings,menu,status}` and `games/*`; owner read `private/{record,parlays}`; publisher-only `store/*` and `publisher/jobs`; slips created by the owner (strict schema), read + deleted by the publisher; `owners/{uid}` enrolled only by the publisher. Every write validated. |
 | Auth | Google sign-in for the owner; email/password only for the publisher account (uid pinned in the rules). Enrol an owner: `node publisher/add-owner.mjs <uid>` (the page shows the uid). |
 | Secrets | GitHub: `ODDS_API_KEY`, `ODDSPAPI_KEY`, `FUTBOL_PUBLISHER_EMAIL`, `FUTBOL_PUBLISHER_PASSWORD`. Vercel: the two publisher ones. Locally: `publisher/credentials.json` (gitignored). |

@@ -81,7 +81,12 @@ with `gap`, never margins between siblings, so direct manipulation and reorderin
 
 | Component | Class | Notes |
 |---|---|---|
-| Title bar | `#titlebar` | 50px, text tabs, drag region; padding-right follows `env(titlebar-area-*)` so it never sits under the native caption buttons |
+| Title bar | `#titlebar` | 50px: logo, context line, search, ◀, the three places (Today · Leagues ▾ · Bets, `.nav-tab`), Get app, sign-in; drag region in the desktop app; padding-right follows `env(titlebar-area-*)` so it never sits under the native caption buttons |
+| Bottom bar | `#bnav` + `.bn` | compact only: Today · Leagues · Bets with icons, 64px; the active place white with a blue icon; Leagues shows the open league's short name |
+| Leagues menu | `#lg-menu` + `.lgm-item` | one row per league — badge, name, its live or next game — under the tab; on phones it rises from the bottom bar |
+| League badge | `.lbadge` (+ `.big`) | the league's short name on its colour (`--lg`, from a `c-<code>` class: PL `#b58cff`, LaLiga `#ff9f45`, UCL silver) |
+| Hub header | `#hub` + `.lhead` / `.stabs` | above the lower third, outside the scroll: badge, league title and table line, the league switch (`.lchip`, keeps the tab), sub-tabs underlined in the league colour; Bets uses the same tabs; a match gets a breadcrumb (`.crumbs`) instead |
+| Chips | `.chips` + `.lchip` | filters and switches (Fixtures' all/upcoming/results, the record's leagues); on = white with an inset league-colour underline |
 | Lower third | `.third` | 62px, a 10px colour block in the home kit, matchup + status + fact columns |
 | Crawl | `.ticker` | 24px strip of caveats and sources; `.tk.warn` for the honest warnings, `.tk.src` for feeds |
 | Card | `.card` + `.card-h`/`.card-t`/`.card-s` | title left, subtitle right; subtitle carries the source and the basis |
@@ -93,9 +98,9 @@ with `gap`, never margins between siblings, so direct manipulation and reorderin
 | Table row | `.tr` | league table; rank gutter tinted by zone, `.cut` rows label each zone |
 | Pitch | `.pitchwrap` | players `.pl`, shots `.shot`, hotspots `.hs`, one moving popover `.pop` |
 | Bracket tie | `.brk-card` | two rows + meta; braces only drawn once a pairing fully resolves |
-| Day strip | `.cal` + `.cal-day` | Matchday's calendar: a scrolling row of day chips (weekday, date, month on the first chip and the 1st, league marks), the chosen day inverted white; ◀ ▶ jump to the previous/next day with games |
-| League section | `.lgsec` + `.lg-head` | the chosen day split by competition: a header in the league's colour (PL `#b58cff`, LaLiga `#ff9f45`, UCL silver) with a badge, name, game count and a "Table ›" link, then that league's cards. Fixed order PL · LaLiga · UCL; the Champions League leads on its weeks |
-| League tag | `.glg` | a small outlined label on a game card; unused while Matchday groups by league, kept for mixed lists |
+| Day strip | `.cal` + `.cal-day` | Today's calendar: a scrolling row of day chips (weekday, date, month on the first chip and the 1st, league marks), the chosen day inverted white; ◀ ▶ jump to the previous/next day with games |
+| League section | `.lgsec` + `.lg-head` | Today's chosen day split by league: a header in the league's colour with a badge, the name (opens the league), game count and "Table ›", then that league's cards. The site's league order; the Champions League leads on its weeks |
+| Overview | `.ov` | a league's week (2-across cards, weekday in the status) beside a mini table (`.tbl.mini`: #, crest, club, P, GD, Pts; a domestic league's top five, a `· · ·` gap, bottom three) |
 | UCL week | `.ucl-banner`, `:root.ucl-week` | a silver-edged banner plus a page skin — the starball watermark and silver accents return for a Champions League week |
 | Segmented control | `.seg` | layer switches (Lineups / Shots / Both) |
 
@@ -120,9 +125,12 @@ a player dims everyone else and highlights that player's shots.
   ones.
 - **State changes order.** Pre-match the model's read leads and the pitch drops below it
   (nothing to plot yet); live and after full time the pitch leads.
-- **Compact mode is the same DOM.** At 300px wide the title bar wraps to two rows, the
-  search box and logo text disappear, tables shed columns and the pitch stays hidden. If
-  you add a section, decide what compact does with it.
+- **Three places, always reachable.** Today, Leagues and Bets sit in the bar (the bottom bar
+  in compact); a page's own tabs sit in the hub header, which never scrolls away.
+- **Compact mode is the same DOM.** Phones start in it: the title bar is one row (mark,
+  context, ◀, account), the search box and logo text disappear, the bottom bar appears,
+  cards go single-column, tables shed columns and the pitch stays hidden. If you add a
+  section, decide what compact does with it.
 - **Nothing scrolls sideways.** Wide content (bracket, board) scrolls inside its own
   container.
 

@@ -6,11 +6,11 @@
 //     like the widget did (30 s live, 2 min at the break), because the cron runs late
 // Google sign-in unlocks the owner's records and cards and lets the builder queue slips.
 //
-// Every competition in site-config.js is read at once: the Matchday calendar shows all their games,
-// each tagged with its league. Match, Builder, Table and Record follow one "active" competition —
-// the one of the game you open, or the pill you pick (?c=<code>, remembered). On a Champions League
-// week (Monday–Thursday of a week with UCL games) the site opens on the Champions League unless the
-// URL names a competition, and the payload's `uclWeek` lets the renderer lead with it.
+// Every competition in site-config.js is read at once: Today shows all their games, each tagged with
+// its league. Everything league-specific (table, builder menu, record, a tracked slip) is asked for by
+// league code — the renderer's URL says which league a page is about, so there's no "active" one here.
+// On a Champions League week (Monday–Thursday of a week with UCL games) the payload's `uclWeek` lets
+// the renderer lead with it.
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
@@ -32,48 +32,6 @@ const parse = (snap) => (snap.exists() ? JSON.parse(snap.get("json")) : null);
 const MIN = 60e3;
 // the Vercel-hosted copy calls its own functions; GitHub Pages and localhost call them cross-origin
 const liveUrlFor = (code) => (location.hostname.endsWith(".vercel.app") ? `/api/live/${code}` : `${LIVE_BASE}/${code}`);
-
-// ── the active competition ───────────────────────────────────────────────────
-const urlComp = new URLSearchParams(location.search).get("c");
-let active = byCode[urlComp] ? urlComp : null; // otherwise decided once every slate has answered
-function setActive(code, { remember = true } = {}) {
-  if (!byCode[code] || active === code) return;
-  active = code;
-  if (remember) {
-    saved.set("comp", code);
-    const url = new URL(location.href);
-    url.searchParams.set("c", code);
-    history.replaceState(null, "", url);
-  }
-  paintComps();
-}
-
-// the switcher: every competition as a pill; in compact mode only the active one shows and a click
-// moves on to the next
-function paintComps() {
-  const box = document.getElementById("comps");
-  if (!box) return;
-  if (!box.childElementCount) {
-    for (const c of COMPETITIONS) {
-      const b = document.createElement("button");
-      b.className = "tab comp";
-      b.dataset.code = c.code;
-      b.textContent = c.short;
-      b.addEventListener("click", () => {
-        const compact = document.getElementById("app")?.classList.contains("compact");
-        const i = COMPETITIONS.findIndex((x) => x.code === active);
-        const next = c.code !== active ? c.code : compact ? COMPETITIONS[(i + 1) % COMPETITIONS.length].code : null;
-        if (next && next !== active) switchComp(next);
-      });
-      box.appendChild(b);
-    }
-  }
-  for (const b of box.children) {
-    const on = b.dataset.code === active;
-    b.classList.toggle("active", on);
-    b.title = on ? `${byCode[b.dataset.code].name} (showing)` : `Switch to the ${byCode[b.dataset.code].name}`;
-  }
-}
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 let user = null;
@@ -100,18 +58,20 @@ document.addEventListener("click", (e) => {
 });
 const notEnrolled = () => `${user.email} isn't enrolled as the owner (uid ${user.uid})`;
 
-// one owner-only view of the active competition: signed out → a prompt, not enrolled → says so
-async function privateView(name, what) {
+// one league's owner-only view: signed out → a prompt, not enrolled → says so
+async function privateView(code, name, what) {
+  if (!byCode[code]) return { error: `no such league: ${code}` };
   await authReady;
   if (!user) return { error: `sign in (top right) to see ${what}` };
   try {
-    return parse(await getDoc(refIn(active, "private", name))) || { error: `no ${what} published yet` };
+    return parse(await getDoc(refIn(code, "private", name))) || { error: `no ${what} published yet` };
   } catch (e) {
     return { error: e.code === "permission-denied" ? notEnrolled() : e.message };
   }
 }
-async function publicView(name, missing) {
-  try { return parse(await getDoc(refIn(active, "view", name))) || { error: missing }; }
+async function publicView(code, name, missing) {
+  if (!byCode[code]) return { error: `no such league: ${code}` };
+  try { return parse(await getDoc(refIn(code, "view", name))) || { error: missing }; }
   catch (e) { return { error: e.message }; }
 }
 
@@ -119,7 +79,6 @@ async function publicView(name, missing) {
 const slates = {}; // code → { matches, comp } | null when nothing is published
 const allAnswered = () => COMPETITIONS.every((c) => c.code in slates);
 const rows = () => COMPETITIONS.flatMap((c) => slates[c.code]?.matches || []);
-const soonest = (list) => list.filter((m) => m.state === "pre").sort((a, b) => Date.parse(a.date) - Date.parse(b.date))[0];
 
 // Monday–Thursday of a week with Champions League games → { label } for the banner, else null
 function uclWeek() {
@@ -147,35 +106,16 @@ for (const c of COMPETITIONS) {
 }
 function onSlates() {
   if (!allAnswered()) return;
-  if (!active) {
-    const remembered = byCode[saved.get("comp")] ? saved.get("comp") : null;
-    setActive(uclWeek() && byCode.ucl ? "ucl" : remembered || COMPETITIONS[0].code, { remember: false });
-  }
-  const want = pick();
-  if (String(want?.id ?? "") !== String(cur.id ?? "")) select(want);
+  // a match page opened before the slates arrived: its game can be found now
+  const want = query && rows().find((m) => String(m.id) === query);
+  if (want && String(cur.id ?? "") !== query) select(want);
   else push();
 }
 
-// ── the tracked match ────────────────────────────────────────────────────────
+// ── the open match: the one a match page asked for (setMatch), or none ─────────
 let onUpdate = null;
-let query = saved.get("query");
+let query = null;
 let cur = { id: null };
-
-// the saved pick, else a live game (active competition first), else the active competition's soonest
-function pick() {
-  const all = rows();
-  if (query) { const q = all.find((m) => String(m.id) === query); if (q) return q; }
-  const mine = all.filter((m) => m.compCode === active);
-  return mine.find((m) => m.live) || all.find((m) => m.live) || soonest(mine) || mine[mine.length - 1] || soonest(all) || all[0] || null;
-}
-function switchComp(code) {
-  setActive(code);
-  query = null;
-  saved.set("query", null);
-  const mine = rows().filter((m) => m.compCode === code);
-  select(mine.find((m) => m.live) || soonest(mine) || mine[mine.length - 1] || null);
-  push();
-}
 
 // live, kicking off within 90 minutes, or finished within the last ~2.5 hours of kickoff+play
 function wantsLive(m) {
@@ -186,21 +126,19 @@ function wantsLive(m) {
 function push() {
   if (!onUpdate || !allAnswered()) return;
   const all = rows().sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
-  if (!all.length) { onUpdate({ error: "nothing published yet — the data job runs every 5 minutes", matches: [], comp: null }); return; }
+  const comps = Object.fromEntries(COMPETITIONS.map((c) => [c.code, slates[c.code]?.comp || null]));
+  if (!all.length) { onUpdate({ error: "nothing published yet — the data job runs every 5 minutes", matches: [], comps, comp: null }); return; }
   if (cur.id && !cur.loaded) return; // don't flash an empty match while its view is on the way
   const useLive = cur.live && cur.liveAt >= (cur.snapAt || 0);
-  onUpdate({ match: (useLive ? cur.live : cur.snap) || null, matches: all, comp: slates[active]?.comp || null, uclWeek: uclWeek() });
+  onUpdate({ match: cur.id ? (useLive ? cur.live : cur.snap) || null : null, matchId: cur.id, matches: all, comps, comp: slates[cur.code]?.comp || null, uclWeek: uclWeek() });
 }
 
 function select(row) {
   const id = row ? String(row.id) : null;
   if (cur.id === id) { push(); return; }
-  // opening a game makes its competition the active one (not remembered: a pill pick is). Only on a
-  // new game, so a league opened from Matchday's "Table" isn't undone by the next slate update
-  if (row && row.compCode !== active) setActive(row.compCode, { remember: false });
   cur.unsub?.();
   clearTimeout(cur.timer);
-  cur = { id, code: row?.compCode || active, snap: null, snapAt: 0, live: null, liveAt: 0, loaded: !id, forced: false, unsub: null, timer: null };
+  cur = { id, code: row?.compCode || null, snap: null, snapAt: 0, live: null, liveAt: 0, loaded: !id, forced: false, unsub: null, timer: null };
   if (!id) { push(); return; }
   const code = cur.code;
   cur.unsub = onSnapshot(refIn(code, "games", id), (snap) => {
@@ -240,12 +178,17 @@ const amToDec = (ml) => (ml == null ? null : ml > 0 ? ml / 100 + 1 : 100 / -ml +
 const decToAm = (d) => (d >= 2 ? Math.round((d - 1) * 100) : Math.round(-100 / (d - 1)));
 
 window.wc = {
+  competitions: COMPETITIONS, // [{ code, key, short, name }] in the site's order
   onUpdate: (cb) => { onUpdate = cb; push(); },
-  onConfig: (cb) => setTimeout(() => cb({ expanded, pinned: false, query }), 0),
+  onConfig: (cb) => setTimeout(() => cb({ expanded, pinned: false }), 0),
+  // open a match (its id) or close it (null): the page gets it in the next push
   setMatch: async (id) => {
     query = id ? String(id) : null;
-    saved.set("query", query);
-    if (allAnswered()) select(pick());
+    if (!allAnswered()) return query;
+    if (!query) { select(null); return query; }
+    const row = rows().find((m) => String(m.id) === query);
+    if (row) select(row);
+    else push(); // not on any slate: the page says so
     return query;
   },
   // tonight's card across every competition: each one's singles and notes, the longest longshot
@@ -272,17 +215,16 @@ window.wc = {
       longshot: cards.map(([, d]) => d.longshot).filter(Boolean).sort((a, b) => (b.legs?.length || 0) - (a.legs?.length || 0))[0] || null,
     };
   },
-  // make a competition the active one without changing the followed game (Matchday's "Table" link)
-  setComp: async (code) => { setActive(code); push(); },
-  getParlayMenu: () => publicView("menu", "the builder is published with the 10:00 card"),
-  getStandings: () => publicView("standings", "the table hasn't been published yet"),
-  getRecord: () => privateView("record", "the bet record"),
-  // the slip is queued in the active competition; the next publisher run logs it and it settles like the card
-  trackParlay: async (payload) => {
+  getParlayMenu: (code) => publicView(code, "menu", "the builder is published with the 10:00 card"),
+  getStandings: (code) => publicView(code, "standings", "the table hasn't been published yet"),
+  getRecord: (code) => privateView(code, "record", "the bet record"),
+  // the slip is queued in its league; the next publisher run logs it and it settles like the card
+  trackParlay: async (payload, code) => {
+    if (!byCode[code]) return { error: `no such league: ${code}` };
     await authReady;
     if (!user) return { error: "sign in with the owner account to track a slip" };
     try {
-      await addDoc(collection(db, "competitions", byCode[active].key, "slips"), { payload: JSON.stringify(payload), uid: user.uid, createdAt: serverTimestamp() });
+      await addDoc(collection(db, "competitions", byCode[code].key, "slips"), { payload: JSON.stringify(payload), uid: user.uid, createdAt: serverTimestamp() });
       const dec = (payload.legs || []).reduce((p, l) => p * (l.dec || amToDec(l.ml) || 1), 1);
       return { ok: true, queued: true, americanOdds: decToAm(dec) };
     } catch (e) {
@@ -308,7 +250,6 @@ function paintDownload() {
 }
 
 paintAuth();
-paintComps();
 paintDownload();
 // renderer.js registers its callbacks as it loads, so it must run after window.wc exists
 const script = document.createElement("script");
