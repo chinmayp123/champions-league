@@ -419,17 +419,21 @@ function renderMatchday() {
   wrap.appendChild(h("div", { class: "cal" }, [arrow("◀", prevDay, "Previous day with games"), strip, arrow("▶", nextDay, "Next day with games")]));
   requestAnimationFrame(() => { const on = strip.querySelector(".cal-day.on"); if (on) strip.scrollLeft = on.offsetLeft - strip.clientWidth / 2 + on.offsetWidth / 2; });
 
-  // the chosen day: every game in kickoff order, the Champions League's first on its weeks
-  const lead = (g) => (last.uclWeek && g.compCode === "ucl" ? 0 : 1);
-  const dayGames = (byDay.get(calDay) || []).slice().sort((a, b) => lead(a) - lead(b) || new Date(a.date) - new Date(b.date));
+  // the chosen day: one section per league, in kickoff order within it; the Champions League's leads on its weeks
+  const dayGames = (byDay.get(calDay) || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date));
   const counts = leagues.map((s) => [s, dayGames.filter((g) => g.compShort === s).length]).filter(([, n]) => n);
   const label = keyDate(calDay).toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
   wrap.appendChild(h("div", { class: "today-head" }, [
     h("div", { class: "vh" }, [txt(calDay === today ? "Today " : ""), h("span", { class: "sub", text: `${label} · ${dayGames.length} game${dayGames.length === 1 ? "" : "s"}${multi && counts.length ? ` · ${counts.map(([s, n]) => `${n} ${s}`).join(" · ")}` : ""}` })]),
     h("div", { class: "picks-sub", text: "dim line = model's predicted final · tap a game to follow it" }),
   ]));
-  if (dayGames.length) wrap.appendChild(h("div", { class: "gamegrid" }, dayGames.map((mt) => gameCard(mt, m && m.id === mt.id, { tag: multi }))));
-  else wrap.appendChild(h("div", { class: "center", text: nextDay ? `No games this day · next: ${fmtDay(keyDate(nextDay))}` : "No games this day." }));
+  if (!dayGames.length) wrap.appendChild(h("div", { class: "center", text: nextDay ? `No games this day · next: ${fmtDay(keyDate(nextDay))}` : "No games this day." }));
+  else if (!multi) wrap.appendChild(h("div", { class: "gamegrid" }, dayGames.map((mt) => gameCard(mt, m && m.id === mt.id))));
+  else {
+    const rank = (code) => (last.uclWeek && code === "ucl" ? -1 : LEAGUE_ORDER.indexOf(code) < 0 ? 99 : LEAGUE_ORDER.indexOf(code));
+    const codes = [...new Set(dayGames.map((g) => g.compCode))].sort((a, b) => rank(a) - rank(b));
+    for (const code of codes) wrap.appendChild(leagueSection(code, dayGames.filter((g) => g.compCode === code), m));
+  }
   wrap.appendChild(h("div", {}, [
     h("span", { class: "pick-toggle", text: "↻ Auto-follow the live game", title: "Track whichever game is live (default)", onclick: () => choose(null) }),
   ]));
@@ -462,6 +466,23 @@ function renderMatchday() {
     wrap.appendChild(grid);
   }
   return wrap;
+}
+// one league's games on the chosen day: a header in the league's colour (name, count, a way to its
+// table), then its cards
+const LEAGUE_ORDER = ["epl", "laliga", "ucl"];
+function leagueSection(code, games, tracked) {
+  const g0 = games[0];
+  const liveN = games.filter((g) => g.live).length;
+  const openTable = async () => { await window.wc.setComp?.(code); standings = null; showView("standings"); };
+  return h("section", { class: `lgsec c-${code}` }, [
+    h("div", { class: "lg-head" }, [
+      h("span", { class: "lg-badge", text: g0.compShort }),
+      h("span", { class: "lg-name", text: g0.compName || g0.compShort }),
+      h("span", { class: "lg-count", text: `${games.length} game${games.length === 1 ? "" : "s"}${liveN ? ` · ${liveN} live` : ""}` }),
+      h("button", { class: "lg-link", text: "Table ›", title: `Open the ${g0.compName || g0.compShort} table`, onclick: openTable }),
+    ]),
+    h("div", { class: "gamegrid" }, games.map((mt) => gameCard(mt, tracked && tracked.id === mt.id))),
+  ]);
 }
 const axisOf = (market) => ({ Moneyline: "result", DNB: "result", Spread: "result", Total: "goals", TeamTotal: "goals", BTTS: "goals", Corners: "goals" })[market] || "player";
 

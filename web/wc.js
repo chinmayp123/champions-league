@@ -138,7 +138,7 @@ function uclWeek() {
 for (const c of COMPETITIONS) {
   onSnapshot(refIn(c.code, "view", "slate"), (snap) => {
     const d = parse(snap);
-    slates[c.code] = d ? { matches: (d.matches || []).map((m) => ({ ...m, compCode: c.code, compShort: c.short, compKey: c.key })), comp: d.comp || null } : null;
+    slates[c.code] = d ? { matches: (d.matches || []).map((m) => ({ ...m, compCode: c.code, compShort: c.short, compName: c.name, compKey: c.key })), comp: d.comp || null } : null;
     onSlates();
   }, () => {
     if (!(c.code in slates)) slates[c.code] = null;
@@ -194,9 +194,10 @@ function push() {
 
 function select(row) {
   const id = row ? String(row.id) : null;
-  // opening a game makes its competition the active one (not remembered: a pill pick is)
-  if (row && row.compCode !== active) setActive(row.compCode, { remember: false });
   if (cur.id === id) { push(); return; }
+  // opening a game makes its competition the active one (not remembered: a pill pick is). Only on a
+  // new game, so a league opened from Matchday's "Table" isn't undone by the next slate update
+  if (row && row.compCode !== active) setActive(row.compCode, { remember: false });
   cur.unsub?.();
   clearTimeout(cur.timer);
   cur = { id, code: row?.compCode || active, snap: null, snapAt: 0, live: null, liveAt: 0, loaded: !id, forced: false, unsub: null, timer: null };
@@ -271,6 +272,8 @@ window.wc = {
       longshot: cards.map(([, d]) => d.longshot).filter(Boolean).sort((a, b) => (b.legs?.length || 0) - (a.legs?.length || 0))[0] || null,
     };
   },
+  // make a competition the active one without changing the followed game (Matchday's "Table" link)
+  setComp: async (code) => { setActive(code); push(); },
   getParlayMenu: () => publicView("menu", "the builder is published with the 10:00 card"),
   getStandings: () => publicView("standings", "the table hasn't been published yet"),
   getRecord: () => privateView("record", "the bet record"),

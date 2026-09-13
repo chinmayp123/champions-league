@@ -720,6 +720,22 @@ td.lead { color: var(--text); }
 .compact .cal-day { width: 48px; }
 .compact .cal-num { font-size: 17px; }
 
+/* the chosen day, one section per league: a header in the league's colour, then its cards */
+.cal-lgs i.lg-pl, .lgsec.c-epl { --lg: #b58cff; } .cal-lgs i.lg-laliga, .lgsec.c-laliga { --lg: #ff9f45; } .cal-lgs i.lg-ucl, .lgsec.c-ucl { --lg: var(--star); }
+.lgsec { margin-top: 18px; }
+.today-head + .lgsec { margin-top: 0; }
+.lg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px 8px 8px 12px; background: linear-gradient(90deg, color-mix(in srgb, var(--lg) 14%, var(--panel)), var(--panel) 55%); border: 1px solid var(--line); border-left: 4px solid var(--lg); }
+.lg-badge { flex: none; padding: 4px 6px; background: var(--lg); color: var(--ink); font: 800 11px/1 var(--cd); letter-spacing: .6px; text-transform: uppercase; }
+.lg-name { font: 800 18px/1 var(--cd); letter-spacing: .4px; text-transform: uppercase; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.lg-count { flex: none; font: 500 10px/1 var(--mono); letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
+.lg-link { flex: none; margin-left: auto; padding: 6px 10px; background: transparent; border: 1px solid var(--line2); color: var(--sub); cursor: pointer; font: 800 12px/1 var(--cd); letter-spacing: .8px; text-transform: uppercase; }
+.lg-link:hover { color: var(--text); border-color: var(--lg); }
+.compact .lgsec { margin-top: 14px; }
+.compact .lg-head { gap: 8px; padding: 6px 6px 6px 10px; }
+.compact .lg-name { font-size: 15px; }
+.compact .lg-count { font-size: 9px; letter-spacing: .5px; }
+.compact .lg-link { padding: 5px 8px; font-size: 11px; }
+
 /* the league on a game card in the all-competitions calendar */
 .glg { align-self: center; font: 600 8.5px/1 var(--mono); letter-spacing: .6px; text-transform: uppercase; color: var(--faint); border: 1px solid var(--line2); padding: 2px 4px; }
 .glg.lg-ucl { color: var(--star); border-color: var(--gold-dim); }
@@ -739,7 +755,6 @@ td.lead { color: var(--text); }
 :root.ucl-week .cal-day.on { box-shadow: inset 0 -3px 0 var(--star); }
 
 /* compact (phones): the day chips are too narrow for league names — one coloured dot per league */
-.cal-lgs i.lg-pl { --lg: #b58cff; } .cal-lgs i.lg-laliga { --lg: #ff9f45; } .cal-lgs i.lg-ucl { --lg: var(--star); }
 .compact .cal-lgs { gap: 3px; align-items: center; }
 .compact .cal-lgs i { width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; background: var(--lg, var(--sub)); border-radius: 50%; }
 .compact .cal-day.on .cal-lgs i { background: var(--lg, var(--ink)); box-shadow: 0 0 0 1px var(--ink); }
