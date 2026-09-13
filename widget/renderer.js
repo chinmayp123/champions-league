@@ -736,6 +736,22 @@ function renderMatch(m) {
     if (f.pOver25 != null) rows.appendChild(h("div", { class: "stline" }, [h("span", { class: "l", text: `${f.pOver25 >= 0.5 ? "Over" : "Under"} 2.5 · ${Math.round(f.pOver25 * 100)}%` }), h("span", { class: "k", text: "goals" }), h("span", { class: "r" }, [txt(String(total)), (done || total > 2.5) ? mark((f.pOver25 >= 0.5) === (total > 2.5)) : null])]));
     if (f.pBTTS != null) rows.appendChild(h("div", { class: "stline" }, [h("span", { class: "l", text: `BTTS ${f.pBTTS >= 0.5 ? "yes" : "no"} · ${Math.round(f.pBTTS * 100)}%` }), h("span", { class: "k", text: "both scored" }), h("span", { class: "r" }, [txt(hs > 0 && as > 0 ? "yes" : "not yet"), (done || (hs > 0 && as > 0)) ? mark((f.pBTTS >= 0.5) === (hs > 0 && as > 0)) : null])]));
     blocks.push(rows);
+    // the predicted scorers frozen with the call. Before kickoff they come from the live projection
+    // (the "Predicted scorers" card below); once the game is on that projection isn't built, so
+    // without this the picks vanished from the page even though they're frozen and graded. Ticks come
+    // only from the full-time grade — a live goal event lists scorer and assister in no reliable order.
+    const fz = m.frozen.scorers;
+    const picks = fz ? [...(fz.home || []).map((s) => ({ ...s, abbr: m.home.abbr })), ...(fz.away || []).map((s) => ({ ...s, abbr: m.away.abbr }))].sort((a, b) => b.p - a.p) : [];
+    if (picks.length) {
+      const graded = picks.filter((s) => typeof s.scored === "boolean");
+      const hits = graded.filter((s) => s.scored).length;
+      blocks.push(h("div", { class: "label", text: `Predicted scorers · frozen pre-match · ${graded.length ? `${hits} of ${graded.length} scored` : done ? "graded shortly after full time" : "graded at full time"}` }));
+      blocks.push(h("div", { class: "frozen" }, picks.map((s) => h("div", { class: "stline" }, [
+        h("span", { class: "l", text: `${s.abbr} ${s.name}` }),
+        h("span", { class: "k", text: `${Math.round(s.p * 100)}% to score` }),
+        h("span", { class: "r" }, typeof s.scored === "boolean" ? [txt(s.scored ? "scored" : "no goal"), mark(s.scored)] : [txt("—")]),
+      ]))));
+    }
   }
 
   // recommended bets — the compact view's top two (expanded: the sheet's Recommended card)
