@@ -301,6 +301,7 @@ window.wc = {
 function paintDownload() {
   const a = document.getElementById("btn-download");
   if (!a) return;
+  document.documentElement.classList.toggle("touch", matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: fine)").matches);
   const latest = "https://github.com/chinmayp123/futbol-lab/releases/latest";
   a.href = /Windows/i.test(navigator.userAgent) ? `${latest}/download/Futbol-Lab-Setup.exe` : latest;
   a.title = /Windows/i.test(navigator.userAgent) ? "Download the Futbol Lab app for Windows" : "Download the Futbol Lab desktop app";

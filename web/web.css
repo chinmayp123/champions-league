@@ -14,6 +14,8 @@
 .compact .comps { margin-right: 0; }
 .compact .comps .comp:not(.active) { display: none; }
 
-/* "Get app": the desktop installers (hidden on phones, and inside the desktop app itself) */
+/* "Get app": the desktop installers — in a narrow browser window too; hidden on touch devices (nothing
+   to install there) and inside the desktop app itself */
 #btn-download.dl { display: inline-flex; align-items: center; text-decoration: none; }
-.compact #btn-download.dl { display: none; }
+.compact #btn-download.dl { padding-left: 6px; padding-right: 6px; }
+:root.touch #btn-download.dl { display: none; }
